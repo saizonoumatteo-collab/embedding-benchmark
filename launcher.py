@@ -13,7 +13,7 @@ import webbrowser
 import uvicorn
 
 # When frozen by PyInstaller, sys._MEIPASS is the temp extraction directory.
-# We patch the working directory so that FastAPI can find static/ and main.py.
+# We patch the working directory so that FastAPI can find static/.
 if getattr(sys, "frozen", False):
     BASE_DIR = sys._MEIPASS
     os.chdir(BASE_DIR)
@@ -31,10 +31,14 @@ def _open_browser():
 
 
 if __name__ == "__main__":
-    print(f"[Embedding Benchmark] Démarrage sur {URL} …")
+    # Import the app object directly — uvicorn cannot resolve the "main:app"
+    # string import inside a PyInstaller bundle.
+    from main import app
+
+    print(f"[Embedding Benchmark] Demarrage sur {URL} ...")
     threading.Thread(target=_open_browser, daemon=True).start()
     uvicorn.run(
-        "main:app",
+        app,
         host=HOST,
         port=PORT,
         log_level="warning",
