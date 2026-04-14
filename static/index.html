@@ -9,14 +9,14 @@
 </head>
 <body>
 
-<!-- ══ SIDEBAR ══════════════════════════════════════════════════════════════ -->
+<!-- ══ SIDEBAR ══════════════════════════════════════════════ -->
 <aside class="sidebar">
   <div class="sidebar-header">
     <div class="logo">
       <span class="logo-icon">⚡</span>
       <div>
         <div class="logo-title">Embedding<strong>Bench</strong></div>
-        <div class="logo-sub">Ollama · v2.0</div>
+        <div class="logo-sub">Ollama · v3.0</div>
       </div>
     </div>
     <div id="ollama-status" class="badge badge-checking">
@@ -25,13 +25,15 @@
   </div>
 
   <nav class="sidebar-nav">
-    <button class="nav-btn active" data-view="benchmark">⚡ Benchmark</button>
-    <button class="nav-btn" data-view="explorer">🔍 Explorateur</button>
+    <button class="nav-btn active" data-view="benchmark">⚡ Bench</button>
+    <button class="nav-btn" data-view="explorer">🔍 Explore</button>
+    <button class="nav-btn" data-view="heatmap">🌡 Heatmap</button>
     <button class="nav-btn" data-view="history">📋 Historique</button>
   </nav>
 
-  <!-- ── Benchmark panel ── -->
+  <!-- ── Benchmark panel ─────────────────────────────────── -->
   <div id="panel-benchmark" class="sidebar-panel">
+
     <section class="sb-section">
       <div class="section-header">
         <span class="section-title">Modèles</span>
@@ -41,39 +43,57 @@
     </section>
 
     <section class="sb-section">
+      <div class="section-header">
+        <span class="section-title">Presets</span>
+      </div>
+      <div class="preset-grid">
+        <button class="preset-btn" data-preset="quick"   title="Speed + STS uniquement (~1 min)">⚡ Rapide</button>
+        <button class="preset-btn" data-preset="standard" title="Speed + STS + Retrieval + Classification (~3 min)">📊 Standard</button>
+        <button class="preset-btn" data-preset="full"    title="Tous les tests (~6 min)">🔬 Complet</button>
+        <button class="preset-btn" data-preset="quality" title="Qualité sémantique uniquement, sans vitesse">🎯 Qualité</button>
+      </div>
+    </section>
+
+    <section class="sb-section">
       <span class="section-title">Tests</span>
       <div class="tests-grid">
-        <label class="test-toggle" data-tip="Latence, throughput et dimension des vecteurs">
-          <input type="checkbox" id="chk-speed" checked/>
-          <span class="test-pill">🚀 Vitesse</span>
+        <label class="test-toggle" data-tip="Latence, throughput, dimension des vecteurs">
+          <input type="checkbox" id="chk-speed" checked/><span class="test-pill">🚀 Vitesse</span>
         </label>
-        <label class="test-toggle" data-tip="Corrélation de Pearson avec des scores de similarité humains sur 30 paires annotées">
-          <input type="checkbox" id="chk-sts" checked/>
-          <span class="test-pill">🎯 STS</span>
+        <label class="test-toggle" data-tip="Corrélation de Pearson sur 30 paires annotées humainement">
+          <input type="checkbox" id="chk-sts" checked/><span class="test-pill">🎯 STS</span>
         </label>
-        <label class="test-toggle" data-tip="NDCG@5, Recall@5 et MRR sur 8 requêtes avec des documents pertinents et non pertinents">
-          <input type="checkbox" id="chk-retrieval" checked/>
-          <span class="test-pill">🔎 Retrieval</span>
+        <label class="test-toggle" data-tip="NDCG@5, Recall@5, MRR sur 8 requêtes avec documents pertinents/non-pertinents">
+          <input type="checkbox" id="chk-retrieval" checked/><span class="test-pill">🔎 Retrieval</span>
         </label>
-        <label class="test-toggle" data-tip="Précision centroïde et score Silhouette sur 50 textes en 5 catégories">
-          <input type="checkbox" id="chk-cls" checked/>
-          <span class="test-pill">📦 Classification</span>
+        <label class="test-toggle" data-tip="Précision centroïde + Silhouette sur 50 textes / 5 catégories">
+          <input type="checkbox" id="chk-cls" checked/><span class="test-pill">📦 Classification</span>
         </label>
         <label class="test-toggle" data-tip="Ratio de discrimination intra/inter-groupe sur 10 groupes de paraphrases">
-          <input type="checkbox" id="chk-rob" checked/>
-          <span class="test-pill">🛡 Robustesse</span>
+          <input type="checkbox" id="chk-rob" checked/><span class="test-pill">🛡 Robustesse</span>
         </label>
         <label class="test-toggle" data-tip="Score d'alignement cross-lingue sur 15 paires EN↔FR/ES/DE/IT/PT">
-          <input type="checkbox" id="chk-multi" checked/>
-          <span class="test-pill">🌍 Multilingue</span>
+          <input type="checkbox" id="chk-multi" checked/><span class="test-pill">🌍 Multilingue</span>
+        </label>
+        <label class="test-toggle" data-tip="Mesure si le modèle distingue des affirmations opposées (amour vs haine)">
+          <input type="checkbox" id="chk-negation" checked/><span class="test-pill">🔄 Négation</span>
+        </label>
+        <label class="test-toggle" data-tip="Gradient sémantique : la similarité doit décroître quand le sujet s'éloigne de l'ancre">
+          <input type="checkbox" id="chk-drift" checked/><span class="test-pill">📉 Topic Drift</span>
         </label>
       </div>
     </section>
 
     <section class="sb-section">
+      <span class="section-title">Paires STS personnalisées</span>
+      <p class="muted-sm" style="margin-bottom:6px">Format : <code>texte A | texte B | score</code></p>
+      <textarea id="custom-sts" class="textarea" rows="4"
+        placeholder="The cat sat. | A cat is resting. | 0.9&#10;I hate coffee. | I love coffee. | 0.1"></textarea>
+    </section>
+
+    <section class="sb-section">
       <span class="section-title">Textes personnalisés <small>(vitesse)</small></span>
-      <textarea id="custom-texts" class="textarea" rows="4"
-        placeholder="Un texte par ligne…"></textarea>
+      <textarea id="custom-texts" class="textarea" rows="3" placeholder="Un texte par ligne…"></textarea>
     </section>
 
     <div class="sidebar-footer">
@@ -81,7 +101,7 @@
     </div>
   </div>
 
-  <!-- ── Explorer panel ── -->
+  <!-- ── Explorer panel ──────────────────────────────────── -->
   <div id="panel-explorer" class="sidebar-panel hidden">
     <section class="sb-section">
       <span class="section-title">Explorateur de similarité</span>
@@ -95,40 +115,69 @@
     </section>
     <div id="exp-result" class="hidden">
       <div class="sim-gauge-wrap">
-        <canvas id="sim-gauge" width="200" height="200"></canvas>
+        <canvas id="sim-gauge" width="180" height="180"></canvas>
         <div class="sim-score-label" id="sim-score-txt">—</div>
       </div>
       <div class="sim-meta" id="sim-meta"></div>
+      <div class="sim-bar-wrap">
+        <div class="sim-bar-labels"><span>Non similaire</span><span>Identique</span></div>
+        <div class="sim-bar-track"><div id="sim-bar-fill" class="sim-bar-fill"></div></div>
+        <div class="sim-interp" id="sim-interp"></div>
+      </div>
     </div>
   </div>
 
-  <!-- ── History panel ── -->
+  <!-- ── Heatmap panel ────────────────────────────────────── -->
+  <div id="panel-heatmap" class="sidebar-panel hidden">
+    <section class="sb-section">
+      <span class="section-title">Heatmap de similarité</span>
+      <label class="field-label">Modèle</label>
+      <select id="hm-model" class="select"><option value="">— sélectionner —</option></select>
+      <label class="field-label mt">Source</label>
+      <select id="hm-source" class="select">
+        <option value="classification">Textes de classification (50)</option>
+        <option value="sts">Paires STS (60 textes)</option>
+        <option value="custom">Textes personnalisés</option>
+      </select>
+      <div id="hm-custom-area" class="hidden">
+        <label class="field-label mt">Textes <small>(un par ligne, max 40)</small></label>
+        <textarea id="hm-custom-texts" class="textarea" rows="6" placeholder="Un texte par ligne…"></textarea>
+        <label class="field-label mt">Labels <small>(optionnel, un par ligne)</small></label>
+        <textarea id="hm-custom-labels" class="textarea" rows="4" placeholder="label1&#10;label2…"></textarea>
+      </div>
+      <button id="hm-run" class="btn btn-primary mt" disabled>Générer la heatmap</button>
+    </section>
+  </div>
+
+  <!-- ── History panel ───────────────────────────────────── -->
   <div id="panel-history" class="sidebar-panel hidden">
     <section class="sb-section">
       <div class="section-header">
-        <span class="section-title">Historique des runs</span>
-        <button id="clear-history" class="icon-btn danger" title="Tout effacer">🗑</button>
+        <span class="section-title">Historique</span>
+        <button id="clear-history" class="icon-btn danger" title="Effacer">🗑</button>
       </div>
       <div id="history-list" class="history-list"><p class="muted-sm">Aucun run enregistré.</p></div>
     </section>
   </div>
 </aside>
 
-<!-- ══ MAIN ═════════════════════════════════════════════════════════════════ -->
+<!-- ══ MAIN ══════════════════════════════════════════════════ -->
 <main class="main">
 
   <!-- Hero -->
   <div id="hero" class="hero">
     <div class="hero-icon">📐</div>
     <h1>Embedding Benchmark</h1>
-    <p>Sélectionnez des modèles, choisissez vos tests et cliquez sur <strong>Lancer le benchmark</strong>.<br>
-       Tous les tests tournent en streaming — les résultats s'affichent au fur et à mesure.</p>
+    <p>Sélectionnez vos modèles, configurez les tests et cliquez sur <strong>Lancer</strong>.<br>
+       Résultats en streaming temps réel — 8 benchmarks, 12+ métriques.</p>
     <div class="hero-badges">
-      <span class="hero-badge">30 paires STS annotées</span>
-      <span class="hero-badge">8 requêtes de retrieval</span>
-      <span class="hero-badge">10 groupes de paraphrases</span>
+      <span class="hero-badge">30 paires STS</span>
+      <span class="hero-badge">8 requêtes retrieval</span>
+      <span class="hero-badge">50 textes classification</span>
+      <span class="hero-badge">10 groupes paraphrases</span>
       <span class="hero-badge">15 paires multilingues</span>
-      <span class="hero-badge">50 textes de classification</span>
+      <span class="hero-badge">20 paires négation</span>
+      <span class="hero-badge">3 séquences drift</span>
     </div>
   </div>
 
@@ -146,133 +195,151 @@
 
   <!-- Results -->
   <div id="results-view" class="hidden">
-
-    <!-- Tab bar -->
     <div class="tab-bar">
-      <button class="tab active" data-tab="overview">Vue d'ensemble</button>
+      <button class="tab active"  data-tab="overview">Vue d'ensemble</button>
       <button class="tab" data-tab="speed">Vitesse</button>
       <button class="tab" data-tab="sts">STS</button>
       <button class="tab" data-tab="retrieval">Retrieval</button>
       <button class="tab" data-tab="classification">Classification</button>
       <button class="tab" data-tab="robustness">Robustesse</button>
       <button class="tab" data-tab="multilingual">Multilingue</button>
-      <button class="tab" data-tab="visualization">Visualisation PCA</button>
+      <button class="tab" data-tab="negation">Négation</button>
+      <button class="tab" data-tab="drift">Topic Drift</button>
+      <button class="tab" data-tab="visualization">Visualisation</button>
     </div>
 
-    <!-- Overview tab -->
+    <!-- Overview -->
     <div id="tab-overview" class="tab-content active">
-      <div id="leaderboard" class="leaderboard"></div>
+      <div id="leaderboard"></div>
       <div class="two-col">
-        <div class="chart-card" id="radar-card">
-          <div class="chart-title">🕸 Radar multi-métriques
-            <span class="info-btn" data-tip="Comparaison visuelle de toutes les métriques normalisées. Plus le polygone est grand, meilleur est le modèle.">?</span>
-          </div>
-          <div class="chart-sub">Scores normalisés par métrique</div>
+        <div class="chart-card">
+          <div class="chart-title">🕸 Radar multi-métriques <span class="info-btn" data-tip="Scores normalisés 0-1 par métrique. Plus le polygone est grand, meilleures sont les performances globales.">?</span></div>
+          <div class="chart-sub">Comparaison visuelle des performances</div>
           <div class="chart-wrap" style="height:280px"><canvas id="radar-chart"></canvas></div>
         </div>
-        <div class="chart-card" id="score-bar-card">
-          <div class="chart-title">🏆 Score global /100
-            <span class="info-btn" data-tip="Score composite pondéré : Retrieval 30%, STS 20%, Classification 15%, Multilingue 15%, Vitesse 10%, Robustesse 10%.">?</span>
-          </div>
+        <div class="chart-card">
+          <div class="chart-title">🏆 Score global /100 <span class="info-btn" data-tip="Score composite pondéré : Retrieval 28%, STS 18%, Classification 12%, Multilingue 13%, Robustesse 9%, Vitesse 8%, Négation 7%, Drift 5%.">?</span></div>
           <div class="chart-sub">Weighted composite score</div>
           <div class="chart-wrap" style="height:280px"><canvas id="overall-chart"></canvas></div>
         </div>
       </div>
+      <!-- Head-to-head -->
+      <div class="chart-card" id="h2h-card">
+        <div class="chart-title">⚔ Comparaison tête-à-tête</div>
+        <div class="chart-sub">Sélectionnez deux modèles pour les comparer directement</div>
+        <div class="h2h-selectors">
+          <select id="h2h-a" class="select" style="max-width:220px"><option value="">Modèle A</option></select>
+          <span class="h2h-vs">VS</span>
+          <select id="h2h-b" class="select" style="max-width:220px"><option value="">Modèle B</option></select>
+          <button id="h2h-run" class="btn btn-ghost">Comparer</button>
+        </div>
+        <div id="h2h-result" class="hidden"></div>
+      </div>
     </div>
 
-    <!-- Speed tab -->
+    <!-- Speed -->
     <div id="tab-speed" class="tab-content hidden">
-      <div class="metric-explain">
-        <strong>🚀 Benchmark de vitesse</strong> — Mesure le temps nécessaire pour générer un embedding.
-        La <em>latence</em> est le temps par texte (ms). Le <em>throughput</em> est le nombre de textes par seconde.
-        Le <em>P95</em> indique la latence au 95e percentile (stabilité du modèle).
-      </div>
+      <div class="metric-explain"><strong>🚀 Benchmark de vitesse</strong> — Mesure le temps de génération d'un embedding. <em>Latence moy.</em> = temps par texte. <em>P95</em> = percentile 95 (stabilité). <em>Throughput</em> = textes/seconde. Les <em>box plots</em> montrent la distribution complète des latences.</div>
       <div class="charts-grid" id="speed-charts"></div>
       <div id="speed-table" class="table-card"></div>
     </div>
 
-    <!-- STS tab -->
+    <!-- STS -->
     <div id="tab-sts" class="tab-content hidden">
-      <div class="metric-explain">
-        <strong>🎯 Semantic Textual Similarity (STS)</strong> — Mesure si le modèle comprend la <em>proximité sémantique</em>.
-        On calcule la similarité cosinus entre 30 paires de phrases, puis la <strong>corrélation de Pearson</strong>
-        avec des scores annotés par des humains. r &gt; 0.7 = excellent · 0.5–0.7 = bon · &lt; 0.5 = faible.
-      </div>
+      <div class="metric-explain"><strong>🎯 Semantic Textual Similarity</strong> — Corrélation de <em>Pearson r</em> entre la similarité cosinus prédite et des scores annotés humainement (30 paires). r &gt; 0.7 = excellent · 0.5–0.7 = bon · &lt; 0.5 = faible.</div>
       <div class="charts-grid" id="sts-charts"></div>
       <div id="sts-table" class="table-card"></div>
     </div>
 
-    <!-- Retrieval tab -->
+    <!-- Retrieval -->
     <div id="tab-retrieval" class="tab-content hidden">
-      <div class="metric-explain">
-        <strong>🔎 Information Retrieval</strong> — Le cas d'usage principal des embeddings.
-        Pour chaque requête, on classe les documents par similarité et on mesure :
-        <em>NDCG@5</em> (qualité du classement pondérée par position),
-        <em>Recall@5</em> (fraction des documents pertinents récupérés dans les 5 premiers),
-        <em>MRR</em> (rang moyen réciproque du premier document pertinent).
-        Scores &gt; 0.8 = excellent.
-      </div>
+      <div class="metric-explain"><strong>🔎 Information Retrieval</strong> — Pour chaque requête, les documents sont classés par similarité. <em>NDCG@5</em> récompense les documents pertinents bien classés. <em>Recall@5</em> = fraction récupérée dans le top-5. <em>MRR</em> = rang du 1er document pertinent. Scores &gt; 0.8 = excellent.</div>
       <div class="charts-grid" id="retrieval-charts"></div>
       <div id="retrieval-table" class="table-card"></div>
     </div>
 
-    <!-- Classification tab -->
+    <!-- Classification -->
     <div id="tab-classification" class="tab-content hidden">
-      <div class="metric-explain">
-        <strong>📦 Classification par embeddings</strong> — Teste si les embeddings de même catégorie sont proches.
-        La <em>précision centroïde</em> affecte chaque texte à la classe dont le vecteur moyen est le plus proche.
-        Le <em>score Silhouette</em> (cosinus) mesure la séparation globale des clusters.
-      </div>
+      <div class="metric-explain"><strong>📦 Classification par embeddings</strong> — Teste si les embeddings de même catégorie se regroupent. <em>Précision centroïde</em> = affectation au vecteur moyen le plus proche. <em>Silhouette</em> = séparation globale des clusters. La <em>matrice de confusion</em> montre les erreurs de classification.</div>
       <div class="charts-grid" id="cls-charts"></div>
       <div id="cls-table" class="table-card"></div>
     </div>
 
-    <!-- Robustness tab -->
+    <!-- Robustness -->
     <div id="tab-robustness" class="tab-content hidden">
-      <div class="metric-explain">
-        <strong>🛡 Robustesse aux paraphrases</strong> — Un bon modèle produit des embeddings similaires
-        pour des phrases de même sens. On calcule la similarité <em>intra-groupe</em> (paraphrases)
-        vs <em>inter-groupe</em> (phrases différentes). Le <em>ratio de discrimination</em>
-        (intra/inter) mesure cette capacité : &gt; 1.5 = bon · &gt; 2.0 = excellent.
-      </div>
+      <div class="metric-explain"><strong>🛡 Robustesse aux paraphrases</strong> — Similarité <em>intra-groupe</em> (paraphrases) vs <em>inter-groupe</em> (phrases différentes). <em>Ratio de discrimination</em> = intra/inter. &gt; 2.0 = excellent · &gt; 1.5 = bon.</div>
       <div class="charts-grid" id="rob-charts"></div>
       <div id="rob-table" class="table-card"></div>
     </div>
 
-    <!-- Multilingual tab -->
+    <!-- Multilingual -->
     <div id="tab-multilingual" class="tab-content hidden">
-      <div class="metric-explain">
-        <strong>🌍 Alignement multilingue</strong> — Mesure si le modèle produit des embeddings similaires
-        pour des phrases de même sens dans des langues différentes (EN↔FR/ES/DE/IT/PT).
-        Le <em>score d'alignement</em> est la différence entre la similarité des paires de traduction
-        et celle de paires aléatoires. Modèles monolingues ≈ 0, multilingues &gt; 0.3.
-      </div>
+      <div class="metric-explain"><strong>🌍 Alignement multilingue</strong> — Similarité cosinus entre traductions EN↔FR/ES/DE/IT/PT. <em>Score d'alignement</em> = sim_traduction − sim_non-traduction. &gt; 0.3 = bon modèle multilingue · ≈ 0 = monolingue.</div>
       <div class="charts-grid" id="multi-charts"></div>
       <div id="multi-table" class="table-card"></div>
     </div>
 
-    <!-- Visualization tab -->
+    <!-- Negation -->
+    <div id="tab-negation" class="tab-content hidden">
+      <div class="metric-explain"><strong>🔄 Conscience de la négation</strong> — Teste si le modèle distingue les affirmations opposées ("j'adore" vs "je déteste"). La plupart des modèles capturent le <em>sujet</em> mais pas la <em>polarité</em>. <em>Similarité négation</em> proche de 1 = le modèle ignore l'opposition. <em>Score de conscience</em> = 1 − sim_moy.</div>
+      <div class="charts-grid" id="neg-charts"></div>
+      <div id="neg-table" class="table-card"></div>
+    </div>
+
+    <!-- Topic Drift -->
+    <div id="tab-drift" class="tab-content hidden">
+      <div class="metric-explain"><strong>📉 Topic Drift</strong> — Mesure si la similarité décroît de façon <em>monotone</em> quand le sujet s'éloigne progressivement de l'ancre. Un bon modèle produit un gradient sémantique régulier. <em>Score de monotonicité</em> = fraction des paires consécutives où sim diminue.</div>
+      <div id="drift-charts" class="charts-grid"></div>
+      <div id="drift-table" class="table-card"></div>
+    </div>
+
+    <!-- Visualization -->
     <div id="tab-visualization" class="tab-content hidden">
-      <div class="metric-explain">
-        <strong>📍 Visualisation PCA</strong> — Réduction des embeddings à 2 dimensions par ACP.
-        Les points de même couleur appartiennent à la même catégorie.
-        Un bon modèle forme des clusters bien séparés.
-      </div>
+      <div class="metric-explain"><strong>📍 Visualisation des embeddings</strong> — Réduction dimensionnelle 2D. <em>PCA</em> (rapide, linéaire) vs <em>t-SNE</em> (lent mais révèle mieux les clusters non-linéaires). Les points de même couleur = même catégorie. Passez la souris pour voir le texte.</div>
       <div class="viz-controls">
-        <label class="field-label">Modèle à visualiser</label>
-        <select id="viz-model-select" class="select" style="max-width:300px"></select>
-        <button id="viz-run-btn" class="btn btn-ghost">↻ Recalculer</button>
+        <div>
+          <label class="field-label">Modèle</label>
+          <select id="viz-model-select" class="select" style="max-width:280px"></select>
+        </div>
+        <div>
+          <label class="field-label">Méthode</label>
+          <div class="method-toggle">
+            <button class="method-btn active" data-method="pca">PCA</button>
+            <button class="method-btn" data-method="tsne">t-SNE</button>
+          </div>
+        </div>
+        <button id="viz-run-btn" class="btn btn-ghost" style="align-self:flex-end">↻ Calculer</button>
       </div>
       <div class="chart-card">
-        <div class="chart-wrap" style="height:420px"><canvas id="pca-chart"></canvas></div>
+        <div id="viz-status" class="muted-sm" style="padding:8px 0 12px"></div>
+        <div class="chart-wrap" style="height:460px"><canvas id="pca-chart"></canvas></div>
       </div>
     </div>
 
     <!-- Export -->
     <div class="export-row">
-      <button id="export-json" class="btn btn-ghost">⬇ JSON</button>
-      <button id="export-csv"  class="btn btn-ghost">⬇ CSV</button>
-      <button id="save-history" class="btn btn-ghost">💾 Sauvegarder dans l'historique</button>
+      <button id="export-json"   class="btn btn-ghost">⬇ JSON</button>
+      <button id="export-csv"    class="btn btn-ghost">⬇ CSV</button>
+      <button id="save-history"  class="btn btn-ghost">💾 Sauvegarder</button>
+    </div>
+  </div>
+
+  <!-- Heatmap view (standalone) -->
+  <div id="heatmap-view" class="hidden">
+    <div class="heatmap-header">
+      <h2 class="heatmap-title">🌡 Heatmap de similarité</h2>
+      <p id="heatmap-info" class="muted-sm"></p>
+    </div>
+    <div id="heatmap-loading" class="hidden progress-view" style="padding:20px">
+      <div class="progress-spinner"></div><p class="muted-sm">Calcul des embeddings…</p>
+    </div>
+    <div class="heatmap-canvas-wrap">
+      <canvas id="heatmap-canvas"></canvas>
+    </div>
+    <div class="heatmap-legend">
+      <span style="color:var(--c-cold)">■ Dissimilaire (0)</span>
+      <div class="legend-gradient"></div>
+      <span style="color:var(--c-hot)">■ Très similaire (1)</span>
     </div>
   </div>
 </main>
