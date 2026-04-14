@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Embedding Benchmark — Ollama</title>
+  <link rel="stylesheet" href="/static/css/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">
+        <span class="logo-icon">⚡</span>
+        <span class="logo-text">Embedding<br><strong>Benchmark</strong></span>
+      </div>
+      <div id="ollama-status" class="status-badge status-checking">
+        <span class="status-dot"></span> Vérification…
+      </div>
+    </div>
+
+    <section class="sidebar-section">
+      <h3 class="section-title">Modèles</h3>
+      <div id="model-list" class="model-list">
+        <p class="muted">Chargement…</p>
+      </div>
+      <button id="refresh-models" class="btn btn-ghost btn-sm">↻ Rafraîchir</button>
+    </section>
+
+    <section class="sidebar-section">
+      <h3 class="section-title">Tests à exécuter</h3>
+      <label class="toggle-row">
+        <input type="checkbox" id="chk-speed" checked />
+        <span class="toggle-label">
+          <span class="test-icon">🚀</span> Vitesse
+          <small>Latence & throughput</small>
+        </span>
+      </label>
+      <label class="toggle-row">
+        <input type="checkbox" id="chk-sts" checked />
+        <span class="toggle-label">
+          <span class="test-icon">🎯</span> Similarité sémantique
+          <small>Corrélation de Pearson (STS)</small>
+        </span>
+      </label>
+      <label class="toggle-row">
+        <input type="checkbox" id="chk-cls" checked />
+        <span class="toggle-label">
+          <span class="test-icon">📊</span> Classification
+          <small>Silhouette & précision</small>
+        </span>
+      </label>
+    </section>
+
+    <section class="sidebar-section">
+      <h3 class="section-title">Textes personnalisés <small>(vitesse)</small></h3>
+      <textarea id="custom-texts" rows="5" class="textarea"
+        placeholder="Un texte par ligne (optionnel)…"></textarea>
+    </section>
+
+    <div class="sidebar-footer">
+      <button id="run-btn" class="btn btn-primary" disabled>
+        <span id="run-icon">▶</span> Lancer le benchmark
+      </button>
+    </div>
+  </aside>
+
+  <!-- ── Main ── -->
+  <main class="main">
+    <!-- Hero (état vide) -->
+    <div id="hero" class="hero">
+      <div class="hero-icon">📐</div>
+      <h1>Embedding Benchmark</h1>
+      <p>Sélectionnez un ou plusieurs modèles dans le panneau de gauche,<br>
+         choisissez les tests à exécuter, puis cliquez sur <strong>Lancer le benchmark</strong>.</p>
+    </div>
+
+    <!-- Progress -->
+    <div id="progress-view" class="progress-view hidden">
+      <div class="progress-spinner"></div>
+      <p id="progress-label">Initialisation…</p>
+    </div>
+
+    <!-- Results -->
+    <div id="results-view" class="hidden">
+      <!-- Summary cards -->
+      <div id="summary-cards" class="summary-cards"></div>
+
+      <!-- Charts grid -->
+      <div id="charts-grid" class="charts-grid"></div>
+
+      <!-- Detail tables -->
+      <div id="detail-tables" class="detail-tables"></div>
+
+      <!-- Export -->
+      <div class="export-row">
+        <button id="export-json" class="btn btn-ghost">⬇ Exporter JSON</button>
+        <button id="export-csv" class="btn btn-ghost">⬇ Exporter CSV</button>
+      </div>
+    </div>
+  </main>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
