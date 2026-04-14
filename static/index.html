@@ -1,106 +1,285 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>Embedding Benchmark — Ollama</title>
-  <link rel="stylesheet" href="/static/css/styles.css" />
+  <link rel="stylesheet" href="/static/css/styles.css"/>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 </head>
 <body>
-  <!-- ── Sidebar ── -->
-  <aside class="sidebar">
-    <div class="sidebar-header">
-      <div class="logo">
-        <span class="logo-icon">⚡</span>
-        <span class="logo-text">Embedding<br><strong>Benchmark</strong></span>
-      </div>
-      <div id="ollama-status" class="status-badge status-checking">
-        <span class="status-dot"></span> Vérification…
+
+<!-- ══ SIDEBAR ══════════════════════════════════════════════════════════════ -->
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <div class="logo">
+      <span class="logo-icon">⚡</span>
+      <div>
+        <div class="logo-title">Embedding<strong>Bench</strong></div>
+        <div class="logo-sub">Ollama · v2.0</div>
       </div>
     </div>
+    <div id="ollama-status" class="badge badge-checking">
+      <span class="dot"></span><span class="badge-label">Vérification…</span>
+    </div>
+  </div>
 
-    <section class="sidebar-section">
-      <h3 class="section-title">Modèles</h3>
-      <div id="model-list" class="model-list">
-        <p class="muted">Chargement…</p>
+  <nav class="sidebar-nav">
+    <button class="nav-btn active" data-view="benchmark">⚡ Benchmark</button>
+    <button class="nav-btn" data-view="explorer">🔍 Explorateur</button>
+    <button class="nav-btn" data-view="history">📋 Historique</button>
+  </nav>
+
+  <!-- ── Benchmark panel ── -->
+  <div id="panel-benchmark" class="sidebar-panel">
+    <section class="sb-section">
+      <div class="section-header">
+        <span class="section-title">Modèles</span>
+        <button id="refresh-models" class="icon-btn" title="Rafraîchir">↻</button>
       </div>
-      <button id="refresh-models" class="btn btn-ghost btn-sm">↻ Rafraîchir</button>
+      <div id="model-list" class="model-list"><p class="muted-sm">Chargement…</p></div>
     </section>
 
-    <section class="sidebar-section">
-      <h3 class="section-title">Tests à exécuter</h3>
-      <label class="toggle-row">
-        <input type="checkbox" id="chk-speed" checked />
-        <span class="toggle-label">
-          <span class="test-icon">🚀</span> Vitesse
-          <small>Latence & throughput</small>
-        </span>
-      </label>
-      <label class="toggle-row">
-        <input type="checkbox" id="chk-sts" checked />
-        <span class="toggle-label">
-          <span class="test-icon">🎯</span> Similarité sémantique
-          <small>Corrélation de Pearson (STS)</small>
-        </span>
-      </label>
-      <label class="toggle-row">
-        <input type="checkbox" id="chk-cls" checked />
-        <span class="toggle-label">
-          <span class="test-icon">📊</span> Classification
-          <small>Silhouette & précision</small>
-        </span>
-      </label>
+    <section class="sb-section">
+      <span class="section-title">Tests</span>
+      <div class="tests-grid">
+        <label class="test-toggle" data-tip="Latence, throughput et dimension des vecteurs">
+          <input type="checkbox" id="chk-speed" checked/>
+          <span class="test-pill">🚀 Vitesse</span>
+        </label>
+        <label class="test-toggle" data-tip="Corrélation de Pearson avec des scores de similarité humains sur 30 paires annotées">
+          <input type="checkbox" id="chk-sts" checked/>
+          <span class="test-pill">🎯 STS</span>
+        </label>
+        <label class="test-toggle" data-tip="NDCG@5, Recall@5 et MRR sur 8 requêtes avec des documents pertinents et non pertinents">
+          <input type="checkbox" id="chk-retrieval" checked/>
+          <span class="test-pill">🔎 Retrieval</span>
+        </label>
+        <label class="test-toggle" data-tip="Précision centroïde et score Silhouette sur 50 textes en 5 catégories">
+          <input type="checkbox" id="chk-cls" checked/>
+          <span class="test-pill">📦 Classification</span>
+        </label>
+        <label class="test-toggle" data-tip="Ratio de discrimination intra/inter-groupe sur 10 groupes de paraphrases">
+          <input type="checkbox" id="chk-rob" checked/>
+          <span class="test-pill">🛡 Robustesse</span>
+        </label>
+        <label class="test-toggle" data-tip="Score d'alignement cross-lingue sur 15 paires EN↔FR/ES/DE/IT/PT">
+          <input type="checkbox" id="chk-multi" checked/>
+          <span class="test-pill">🌍 Multilingue</span>
+        </label>
+      </div>
     </section>
 
-    <section class="sidebar-section">
-      <h3 class="section-title">Textes personnalisés <small>(vitesse)</small></h3>
-      <textarea id="custom-texts" rows="5" class="textarea"
-        placeholder="Un texte par ligne (optionnel)…"></textarea>
+    <section class="sb-section">
+      <span class="section-title">Textes personnalisés <small>(vitesse)</small></span>
+      <textarea id="custom-texts" class="textarea" rows="4"
+        placeholder="Un texte par ligne…"></textarea>
     </section>
 
     <div class="sidebar-footer">
-      <button id="run-btn" class="btn btn-primary" disabled>
-        <span id="run-icon">▶</span> Lancer le benchmark
-      </button>
+      <button id="run-btn" class="btn btn-primary" disabled>▶ Lancer le benchmark</button>
     </div>
-  </aside>
+  </div>
 
-  <!-- ── Main ── -->
-  <main class="main">
-    <!-- Hero (état vide) -->
-    <div id="hero" class="hero">
-      <div class="hero-icon">📐</div>
-      <h1>Embedding Benchmark</h1>
-      <p>Sélectionnez un ou plusieurs modèles dans le panneau de gauche,<br>
-         choisissez les tests à exécuter, puis cliquez sur <strong>Lancer le benchmark</strong>.</p>
+  <!-- ── Explorer panel ── -->
+  <div id="panel-explorer" class="sidebar-panel hidden">
+    <section class="sb-section">
+      <span class="section-title">Explorateur de similarité</span>
+      <label class="field-label">Modèle</label>
+      <select id="exp-model" class="select"><option value="">— sélectionner —</option></select>
+      <label class="field-label mt">Texte A</label>
+      <textarea id="exp-text-a" class="textarea" rows="3" placeholder="Premier texte…"></textarea>
+      <label class="field-label mt">Texte B</label>
+      <textarea id="exp-text-b" class="textarea" rows="3" placeholder="Deuxième texte…"></textarea>
+      <button id="exp-run" class="btn btn-primary mt" disabled>Calculer la similarité</button>
+    </section>
+    <div id="exp-result" class="hidden">
+      <div class="sim-gauge-wrap">
+        <canvas id="sim-gauge" width="200" height="200"></canvas>
+        <div class="sim-score-label" id="sim-score-txt">—</div>
+      </div>
+      <div class="sim-meta" id="sim-meta"></div>
     </div>
+  </div>
 
-    <!-- Progress -->
-    <div id="progress-view" class="progress-view hidden">
+  <!-- ── History panel ── -->
+  <div id="panel-history" class="sidebar-panel hidden">
+    <section class="sb-section">
+      <div class="section-header">
+        <span class="section-title">Historique des runs</span>
+        <button id="clear-history" class="icon-btn danger" title="Tout effacer">🗑</button>
+      </div>
+      <div id="history-list" class="history-list"><p class="muted-sm">Aucun run enregistré.</p></div>
+    </section>
+  </div>
+</aside>
+
+<!-- ══ MAIN ═════════════════════════════════════════════════════════════════ -->
+<main class="main">
+
+  <!-- Hero -->
+  <div id="hero" class="hero">
+    <div class="hero-icon">📐</div>
+    <h1>Embedding Benchmark</h1>
+    <p>Sélectionnez des modèles, choisissez vos tests et cliquez sur <strong>Lancer le benchmark</strong>.<br>
+       Tous les tests tournent en streaming — les résultats s'affichent au fur et à mesure.</p>
+    <div class="hero-badges">
+      <span class="hero-badge">30 paires STS annotées</span>
+      <span class="hero-badge">8 requêtes de retrieval</span>
+      <span class="hero-badge">10 groupes de paraphrases</span>
+      <span class="hero-badge">15 paires multilingues</span>
+      <span class="hero-badge">50 textes de classification</span>
+    </div>
+  </div>
+
+  <!-- Progress -->
+  <div id="progress-view" class="hidden progress-view">
+    <div class="progress-top">
       <div class="progress-spinner"></div>
-      <p id="progress-label">Initialisation…</p>
-    </div>
-
-    <!-- Results -->
-    <div id="results-view" class="hidden">
-      <!-- Summary cards -->
-      <div id="summary-cards" class="summary-cards"></div>
-
-      <!-- Charts grid -->
-      <div id="charts-grid" class="charts-grid"></div>
-
-      <!-- Detail tables -->
-      <div id="detail-tables" class="detail-tables"></div>
-
-      <!-- Export -->
-      <div class="export-row">
-        <button id="export-json" class="btn btn-ghost">⬇ Exporter JSON</button>
-        <button id="export-csv" class="btn btn-ghost">⬇ Exporter CSV</button>
+      <div>
+        <div id="progress-model" class="progress-model">—</div>
+        <div id="progress-test"  class="progress-test">Initialisation…</div>
       </div>
     </div>
-  </main>
+    <div class="progress-steps" id="progress-steps"></div>
+  </div>
 
-  <script src="/static/js/app.js"></script>
+  <!-- Results -->
+  <div id="results-view" class="hidden">
+
+    <!-- Tab bar -->
+    <div class="tab-bar">
+      <button class="tab active" data-tab="overview">Vue d'ensemble</button>
+      <button class="tab" data-tab="speed">Vitesse</button>
+      <button class="tab" data-tab="sts">STS</button>
+      <button class="tab" data-tab="retrieval">Retrieval</button>
+      <button class="tab" data-tab="classification">Classification</button>
+      <button class="tab" data-tab="robustness">Robustesse</button>
+      <button class="tab" data-tab="multilingual">Multilingue</button>
+      <button class="tab" data-tab="visualization">Visualisation PCA</button>
+    </div>
+
+    <!-- Overview tab -->
+    <div id="tab-overview" class="tab-content active">
+      <div id="leaderboard" class="leaderboard"></div>
+      <div class="two-col">
+        <div class="chart-card" id="radar-card">
+          <div class="chart-title">🕸 Radar multi-métriques
+            <span class="info-btn" data-tip="Comparaison visuelle de toutes les métriques normalisées. Plus le polygone est grand, meilleur est le modèle.">?</span>
+          </div>
+          <div class="chart-sub">Scores normalisés par métrique</div>
+          <div class="chart-wrap" style="height:280px"><canvas id="radar-chart"></canvas></div>
+        </div>
+        <div class="chart-card" id="score-bar-card">
+          <div class="chart-title">🏆 Score global /100
+            <span class="info-btn" data-tip="Score composite pondéré : Retrieval 30%, STS 20%, Classification 15%, Multilingue 15%, Vitesse 10%, Robustesse 10%.">?</span>
+          </div>
+          <div class="chart-sub">Weighted composite score</div>
+          <div class="chart-wrap" style="height:280px"><canvas id="overall-chart"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Speed tab -->
+    <div id="tab-speed" class="tab-content hidden">
+      <div class="metric-explain">
+        <strong>🚀 Benchmark de vitesse</strong> — Mesure le temps nécessaire pour générer un embedding.
+        La <em>latence</em> est le temps par texte (ms). Le <em>throughput</em> est le nombre de textes par seconde.
+        Le <em>P95</em> indique la latence au 95e percentile (stabilité du modèle).
+      </div>
+      <div class="charts-grid" id="speed-charts"></div>
+      <div id="speed-table" class="table-card"></div>
+    </div>
+
+    <!-- STS tab -->
+    <div id="tab-sts" class="tab-content hidden">
+      <div class="metric-explain">
+        <strong>🎯 Semantic Textual Similarity (STS)</strong> — Mesure si le modèle comprend la <em>proximité sémantique</em>.
+        On calcule la similarité cosinus entre 30 paires de phrases, puis la <strong>corrélation de Pearson</strong>
+        avec des scores annotés par des humains. r &gt; 0.7 = excellent · 0.5–0.7 = bon · &lt; 0.5 = faible.
+      </div>
+      <div class="charts-grid" id="sts-charts"></div>
+      <div id="sts-table" class="table-card"></div>
+    </div>
+
+    <!-- Retrieval tab -->
+    <div id="tab-retrieval" class="tab-content hidden">
+      <div class="metric-explain">
+        <strong>🔎 Information Retrieval</strong> — Le cas d'usage principal des embeddings.
+        Pour chaque requête, on classe les documents par similarité et on mesure :
+        <em>NDCG@5</em> (qualité du classement pondérée par position),
+        <em>Recall@5</em> (fraction des documents pertinents récupérés dans les 5 premiers),
+        <em>MRR</em> (rang moyen réciproque du premier document pertinent).
+        Scores &gt; 0.8 = excellent.
+      </div>
+      <div class="charts-grid" id="retrieval-charts"></div>
+      <div id="retrieval-table" class="table-card"></div>
+    </div>
+
+    <!-- Classification tab -->
+    <div id="tab-classification" class="tab-content hidden">
+      <div class="metric-explain">
+        <strong>📦 Classification par embeddings</strong> — Teste si les embeddings de même catégorie sont proches.
+        La <em>précision centroïde</em> affecte chaque texte à la classe dont le vecteur moyen est le plus proche.
+        Le <em>score Silhouette</em> (cosinus) mesure la séparation globale des clusters.
+      </div>
+      <div class="charts-grid" id="cls-charts"></div>
+      <div id="cls-table" class="table-card"></div>
+    </div>
+
+    <!-- Robustness tab -->
+    <div id="tab-robustness" class="tab-content hidden">
+      <div class="metric-explain">
+        <strong>🛡 Robustesse aux paraphrases</strong> — Un bon modèle produit des embeddings similaires
+        pour des phrases de même sens. On calcule la similarité <em>intra-groupe</em> (paraphrases)
+        vs <em>inter-groupe</em> (phrases différentes). Le <em>ratio de discrimination</em>
+        (intra/inter) mesure cette capacité : &gt; 1.5 = bon · &gt; 2.0 = excellent.
+      </div>
+      <div class="charts-grid" id="rob-charts"></div>
+      <div id="rob-table" class="table-card"></div>
+    </div>
+
+    <!-- Multilingual tab -->
+    <div id="tab-multilingual" class="tab-content hidden">
+      <div class="metric-explain">
+        <strong>🌍 Alignement multilingue</strong> — Mesure si le modèle produit des embeddings similaires
+        pour des phrases de même sens dans des langues différentes (EN↔FR/ES/DE/IT/PT).
+        Le <em>score d'alignement</em> est la différence entre la similarité des paires de traduction
+        et celle de paires aléatoires. Modèles monolingues ≈ 0, multilingues &gt; 0.3.
+      </div>
+      <div class="charts-grid" id="multi-charts"></div>
+      <div id="multi-table" class="table-card"></div>
+    </div>
+
+    <!-- Visualization tab -->
+    <div id="tab-visualization" class="tab-content hidden">
+      <div class="metric-explain">
+        <strong>📍 Visualisation PCA</strong> — Réduction des embeddings à 2 dimensions par ACP.
+        Les points de même couleur appartiennent à la même catégorie.
+        Un bon modèle forme des clusters bien séparés.
+      </div>
+      <div class="viz-controls">
+        <label class="field-label">Modèle à visualiser</label>
+        <select id="viz-model-select" class="select" style="max-width:300px"></select>
+        <button id="viz-run-btn" class="btn btn-ghost">↻ Recalculer</button>
+      </div>
+      <div class="chart-card">
+        <div class="chart-wrap" style="height:420px"><canvas id="pca-chart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Export -->
+    <div class="export-row">
+      <button id="export-json" class="btn btn-ghost">⬇ JSON</button>
+      <button id="export-csv"  class="btn btn-ghost">⬇ CSV</button>
+      <button id="save-history" class="btn btn-ghost">💾 Sauvegarder dans l'historique</button>
+    </div>
+  </div>
+</main>
+
+<!-- Tooltip -->
+<div id="tooltip" class="tooltip hidden"></div>
+
+<script src="/static/js/app.js"></script>
 </body>
 </html>

@@ -1,14 +1,30 @@
-/* ── State ─────────────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   State & constants
+══════════════════════════════════════════════════════════════════ */
 const state = {
   models: [],
+  embTagged: new Set(),
   selected: new Set(),
-  results: null,
+  results: {},           // model → result object (filled progressively)
   charts: [],
+  pcaChart: null,
+  gaugeChart: null,
+  activeTab: 'overview',
 };
 
-const PALETTE = ['#6c63ff','#00d4aa','#ff6b6b','#ffd93d','#ff9f43','#48dbfb'];
+const PALETTE = ['#58a6ff','#3fb950','#f85149','#d29922','#bc8cff','#39d353'];
+const TESTS = [
+  { key:'speed',          label:'Vitesse',         icon:'🚀' },
+  { key:'sts',            label:'STS',              icon:'🎯' },
+  { key:'retrieval',      label:'Retrieval',        icon:'🔎' },
+  { key:'classification', label:'Classification',   icon:'📦' },
+  { key:'robustness',     label:'Robustesse',       icon:'🛡'  },
+  { key:'multilingual',   label:'Multilingue',      icon:'🌍' },
+];
 
-/* ── DOM refs ──────────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   DOM refs
+══════════════════════════════════════════════════════════════════ */
 const $ = id => document.getElementById(id);
 const ollamaStatus  = $('ollama-status');
 const modelList     = $('model-list');
@@ -16,543 +32,844 @@ const refreshBtn    = $('refresh-models');
 const runBtn        = $('run-btn');
 const hero          = $('hero');
 const progressView  = $('progress-view');
-const progressLabel = $('progress-label');
+const progressModel = $('progress-model');
+const progressTest  = $('progress-test');
+const progressSteps = $('progress-steps');
 const resultsView   = $('results-view');
-const summaryCards  = $('summary-cards');
-const chartsGrid    = $('charts-grid');
-const detailTables  = $('detail-tables');
-const exportJSON    = $('export-json');
-const exportCSV     = $('export-csv');
+const tooltip       = $('tooltip');
 
-/* ── Init ──────────────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   Init
+══════════════════════════════════════════════════════════════════ */
 (async () => {
   await checkHealth();
   await loadModels();
+  initNav();
+  initTabs();
+  initTooltips();
+  initExplorer();
+  initHistory();
+  initViz();
 })();
 
-/* ── Health check ──────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   Health
+══════════════════════════════════════════════════════════════════ */
 async function checkHealth() {
   try {
-    const r = await fetch('/api/health');
-    const d = await r.json();
+    const d = await (await fetch('/api/health')).json();
     if (d.ollama === 'ok') {
-      ollamaStatus.className = 'status-badge status-ok';
-      ollamaStatus.innerHTML = '<span class="status-dot"></span> Ollama connecté';
-    } else {
-      throw new Error(d.error || 'unreachable');
-    }
-  } catch (e) {
-    ollamaStatus.className = 'status-badge status-error';
-    ollamaStatus.innerHTML = '<span class="status-dot"></span> Ollama hors ligne';
+      ollamaStatus.className = 'badge badge-ok';
+      ollamaStatus.innerHTML = '<span class="dot"></span><span class="badge-label">Ollama connecté</span>';
+    } else throw new Error();
+  } catch {
+    ollamaStatus.className = 'badge badge-error';
+    ollamaStatus.innerHTML = '<span class="dot"></span><span class="badge-label">Ollama hors ligne</span>';
   }
 }
 
-/* ── Load models ───────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   Models
+══════════════════════════════════════════════════════════════════ */
 async function loadModels() {
-  modelList.innerHTML = '<p class="muted">Chargement…</p>';
+  modelList.innerHTML = '<p class="muted-sm">Chargement…</p>';
   try {
-    const r = await fetch('/api/models');
-    if (!r.ok) throw new Error(await r.text());
-    const d = await r.json();
+    const d = await (await fetch('/api/models')).json();
     state.models = d.models;
-    state.embeddingTagged = new Set(d.embedding_tagged || []);
-    renderModelList();
+    state.embTagged = new Set(d.embedding_tagged);
+    renderModels();
+    populateModelSelects();
   } catch (e) {
-    modelList.innerHTML = `<p class="error-text">Erreur : ${e.message}</p>`;
+    modelList.innerHTML = `<p class="muted-sm" style="color:var(--red)">Erreur : ${e.message}</p>`;
   }
 }
 
-function renderModelList() {
+function renderModels() {
+  modelList.innerHTML = '';
   if (!state.models.length) {
-    modelList.innerHTML = '<p class="muted">Aucun modèle trouvé dans Ollama.</p>';
+    modelList.innerHTML = '<p class="muted-sm">Aucun modèle Ollama trouvé.</p>';
     return;
   }
-  modelList.innerHTML = '';
   state.models.forEach(name => {
-    const item = document.createElement('label');
-    item.className = 'model-item' + (state.selected.has(name) ? ' selected' : '');
-    item.innerHTML = `
-      <input type="checkbox" ${state.selected.has(name) ? 'checked' : ''} />
-      <span class="model-check">${state.selected.has(name) ? '✓' : ''}</span>
+    const label = document.createElement('label');
+    label.className = 'model-item' + (state.selected.has(name) ? ' selected' : '');
+    label.innerHTML = `
+      <input type="checkbox" ${state.selected.has(name) ? 'checked' : ''}/>
+      <span class="chk">${state.selected.has(name) ? '✓' : ''}</span>
       <span class="model-name">${name}</span>
-      ${state.embeddingTagged.has(name) ? '<span class="model-tag">embed</span>' : ''}
-    `;
-    item.addEventListener('change', () => toggleModel(name, item));
-    modelList.appendChild(item);
+      ${state.embTagged.has(name) ? '<span class="embed-tag">embed</span>' : ''}`;
+    label.addEventListener('change', () => {
+      if (state.selected.has(name)) { state.selected.delete(name); label.classList.remove('selected'); label.querySelector('.chk').textContent = ''; }
+      else { state.selected.add(name); label.classList.add('selected'); label.querySelector('.chk').textContent = '✓'; }
+      runBtn.disabled = state.selected.size === 0;
+    });
+    modelList.appendChild(label);
   });
 }
 
-function toggleModel(name, item) {
-  if (state.selected.has(name)) {
-    state.selected.delete(name);
-    item.classList.remove('selected');
-    item.querySelector('.model-check').textContent = '';
-  } else {
-    state.selected.add(name);
-    item.classList.add('selected');
-    item.querySelector('.model-check').textContent = '✓';
-  }
-  runBtn.disabled = state.selected.size === 0;
+function populateModelSelects() {
+  const selects = ['exp-model', 'viz-model-select'];
+  selects.forEach(id => {
+    const el = $(id);
+    if (!el) return;
+    const prev = el.value;
+    el.innerHTML = '<option value="">— sélectionner —</option>';
+    state.models.forEach(m => el.insertAdjacentHTML('beforeend', `<option ${m===prev?'selected':''} value="${m}">${m}</option>`));
+    $('exp-run') && ($('exp-run').disabled = !$('exp-model').value);
+  });
 }
 
 refreshBtn.addEventListener('click', loadModels);
 
-/* ── Run benchmark ─────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   Navigation
+══════════════════════════════════════════════════════════════════ */
+function initNav() {
+  document.querySelectorAll('.nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const view = btn.dataset.view;
+      ['panel-benchmark','panel-explorer','panel-history'].forEach(p => $(p).classList.add('hidden'));
+      $(`panel-${view}`).classList.remove('hidden');
+    });
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Tabs
+══════════════════════════════════════════════════════════════════ */
+function initTabs() {
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+      tab.classList.add('active');
+      state.activeTab = tab.dataset.tab;
+      $(`tab-${tab.dataset.tab}`).classList.remove('hidden');
+    });
+  });
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === name);
+  });
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+  $(`tab-${name}`)?.classList.remove('hidden');
+  state.activeTab = name;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Tooltips
+══════════════════════════════════════════════════════════════════ */
+function initTooltips() {
+  document.addEventListener('mouseover', e => {
+    const el = e.target.closest('[data-tip]');
+    if (!el) { tooltip.classList.add('hidden'); return; }
+    tooltip.textContent = el.dataset.tip;
+    tooltip.classList.remove('hidden');
+  });
+  document.addEventListener('mousemove', e => {
+    tooltip.style.left = (e.clientX + 14) + 'px';
+    tooltip.style.top  = (e.clientY + 14) + 'px';
+  });
+  document.addEventListener('mouseout', e => {
+    if (!e.target.closest('[data-tip]')) tooltip.classList.add('hidden');
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Run benchmark (SSE streaming)
+══════════════════════════════════════════════════════════════════ */
 runBtn.addEventListener('click', runBenchmark);
 
 async function runBenchmark() {
   const models = [...state.selected];
-  const runSpeed = $('chk-speed').checked;
-  const runSTS   = $('chk-sts').checked;
-  const runCls   = $('chk-cls').checked;
+  if (!models.length) return;
 
-  if (!runSpeed && !runSTS && !runCls) {
-    alert('Sélectionnez au moins un test.');
-    return;
+  const cfg = {
+    models,
+    run_speed:          $('chk-speed').checked,
+    run_sts:            $('chk-sts').checked,
+    run_retrieval:      $('chk-retrieval').checked,
+    run_classification: $('chk-cls').checked,
+    run_robustness:     $('chk-rob').checked,
+    run_multilingual:   $('chk-multi').checked,
+    custom_texts: (() => {
+      const v = $('custom-texts').value.trim();
+      return v ? v.split('\n').map(l => l.trim()).filter(Boolean) : null;
+    })(),
+  };
+
+  if (!cfg.run_speed && !cfg.run_sts && !cfg.run_retrieval &&
+      !cfg.run_classification && !cfg.run_robustness && !cfg.run_multilingual) {
+    return alert('Sélectionnez au moins un test.');
   }
 
-  const rawCustom = $('custom-texts').value.trim();
-  const customTexts = rawCustom
-    ? rawCustom.split('\n').map(l => l.trim()).filter(Boolean)
-    : null;
-
-  // Show progress
+  // Reset
+  state.results = {};
+  state.charts.forEach(c => c.destroy());
+  state.charts = [];
   hero.classList.add('hidden');
   resultsView.classList.add('hidden');
   progressView.classList.remove('hidden');
   runBtn.disabled = true;
 
-  const tests = [runSpeed && 'vitesse', runSTS && 'STS', runCls && 'classification']
-    .filter(Boolean).join(', ');
-  progressLabel.textContent = `Benchmark en cours sur ${models.length} modèle(s) : ${tests}…`;
+  // Build step tracker
+  const stepState = {};
+  progressSteps.innerHTML = '';
+  models.forEach(m => {
+    stepState[m] = {};
+    const modelDiv = document.createElement('div');
+    modelDiv.className = 'progress-step';
+    modelDiv.innerHTML = `<span class="step-icon">📦</span><span class="step-label"><strong>${m}</strong></span>`;
+    progressSteps.appendChild(modelDiv);
+    TESTS.forEach(t => {
+      if (!cfg[`run_${t.key}`]) return;
+      const div = document.createElement('div');
+      div.className = 'progress-step';
+      div.id = `step-${m}-${t.key}`;
+      div.innerHTML = `<span class="step-icon" style="margin-left:16px">${t.icon}</span><span class="step-label step-pending">${t.label}</span><span class="step-status"></span>`;
+      progressSteps.appendChild(div);
+      stepState[m][t.key] = 'pending';
+    });
+  });
+
+  function updateStep(model, test, status, text='') {
+    const el = $(`step-${model}-${test}`);
+    if (!el) return;
+    const lbl = el.querySelector('.step-label');
+    const sta = el.querySelector('.step-status');
+    lbl.className = `step-label step-${status}`;
+    sta.textContent = text;
+  }
 
   try {
-    const r = await fetch('/api/benchmark', {
+    const resp = await fetch('/api/benchmark/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        models, run_speed: runSpeed, run_sts: runSTS,
-        run_classification: runCls,
-        custom_texts: customTexts,
-      }),
+      body: JSON.stringify(cfg),
     });
-    if (!r.ok) {
-      const err = await r.json();
-      throw new Error(err.detail || r.statusText);
+
+    const reader  = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const ev = JSON.parse(line.slice(6));
+        handleEvent(ev);
+      }
     }
-    const d = await r.json();
-    state.results = d.results;
-    renderResults(d.results);
   } catch (e) {
-    progressLabel.textContent = '❌ Erreur : ' + e.message;
+    progressTest.textContent = '❌ Erreur réseau : ' + e.message;
   } finally {
     runBtn.disabled = false;
   }
+
+  function handleEvent(ev) {
+    switch (ev.type) {
+      case 'model_start':
+        progressModel.textContent = ev.model;
+        progressTest.textContent  = 'Démarrage…';
+        break;
+      case 'test_start':
+        progressTest.textContent = TESTS.find(t => t.key === ev.test)?.label + '…';
+        updateStep(ev.model, ev.test, 'running', '⏳');
+        break;
+      case 'test_done':
+        updateStep(ev.model, ev.test, 'done', '✓');
+        if (!state.results[ev.model]) state.results[ev.model] = {};
+        state.results[ev.model][ev.test] = ev.data;
+        break;
+      case 'test_error':
+        updateStep(ev.model, ev.test, 'error', '✗');
+        if (!state.results[ev.model]) state.results[ev.model] = {};
+        state.results[ev.model][ev.test] = { error: ev.error };
+        break;
+      case 'model_done':
+        state.results[ev.model] = ev.result;
+        break;
+      case 'done':
+        progressView.classList.add('hidden');
+        resultsView.classList.remove('hidden');
+        renderResults();
+        break;
+    }
+  }
 }
 
-/* ── Render results ────────────────────────────────────────────────────────── */
-function renderResults(results) {
-  progressView.classList.add('hidden');
-  resultsView.classList.remove('hidden');
-
-  // Destroy previous charts
-  state.charts.forEach(c => c.destroy());
-  state.charts = [];
-
-  summaryCards.innerHTML = '';
-  chartsGrid.innerHTML = '';
-  detailTables.innerHTML = '';
-
-  const models = Object.keys(results);
-
-  renderSummaryCards(results, models);
-  renderCharts(results, models);
-  renderDetailTables(results, models);
+/* ══════════════════════════════════════════════════════════════════
+   Render all results
+══════════════════════════════════════════════════════════════════ */
+function renderResults() {
+  const models = Object.keys(state.results);
+  renderOverview(models);
+  renderSpeedTab(models);
+  renderSTSTab(models);
+  renderRetrievalTab(models);
+  renderClassificationTab(models);
+  renderRobustnessTab(models);
+  renderMultilingualTab(models);
+  initVizForResults(models);
+  switchTab('overview');
 }
 
-/* ── Summary cards ─────────────────────────────────────────────────────────── */
-function renderSummaryCards(results, models) {
-  models.forEach((model, idx) => {
-    const r = results[model];
-    const card = document.createElement('div');
-    card.className = 'model-summary-card';
-    card.style.borderTopColor = PALETTE[idx % PALETTE.length];
-    card.style.borderTopWidth = '3px';
-
-    let html = `<div class="card-model-name">⚡ ${model}</div>`;
-
-    if (r.speed && !r.speed.error) {
-      const latency = r.speed.latency_mean_ms;
-      const quality = latency < 100 ? 'good' : latency < 500 ? '' : 'bad';
-      html += `
-        <div class="card-metric">
-          <span class="card-metric-label">Latence moy.</span>
-          <span class="card-metric-value ${quality}">${latency} ms</span>
-        </div>
-        <div class="card-metric">
-          <span class="card-metric-label">Throughput</span>
-          <span class="card-metric-value">${r.speed.throughput_texts_per_sec} t/s</span>
-        </div>`;
-      if (r.speed.embedding_dim) {
-        html += `<div class="card-dim">${r.speed.embedding_dim}d</div>`;
-      }
-    }
-
-    if (r.sts && !r.sts.error) {
-      const pr = r.sts.pearson_r;
-      const cls = pr > 0.7 ? 'good' : pr > 0.4 ? '' : 'bad';
-      html += `
-        <div class="card-metric">
-          <span class="card-metric-label">Pearson r (STS)</span>
-          <span class="card-metric-value ${cls}">${pr.toFixed(3)}</span>
-        </div>`;
-    }
-
-    if (r.classification && !r.classification.error) {
-      const acc = r.classification.nearest_centroid_accuracy;
-      const sil = r.classification.silhouette_score;
-      const cls = acc > 0.8 ? 'good' : acc > 0.5 ? '' : 'bad';
-      html += `
-        <div class="card-metric">
-          <span class="card-metric-label">Précision centroïde</span>
-          <span class="card-metric-value ${cls}">${(acc * 100).toFixed(1)}%</span>
-        </div>
-        <div class="card-metric">
-          <span class="card-metric-label">Score Silhouette</span>
-          <span class="card-metric-value">${sil.toFixed(3)}</span>
-        </div>`;
-    }
-
-    if (r.error) {
-      html += `<p class="error-text">Erreur : ${r.error}</p>`;
-    }
-
-    card.innerHTML = html;
-    summaryCards.appendChild(card);
-  });
-}
-
-/* ── Charts ────────────────────────────────────────────────────────────────── */
-function makeChartCard(title, subtitle) {
-  const card = document.createElement('div');
-  card.className = 'chart-card';
-  const wrapper = document.createElement('div');
-  wrapper.className = 'chart-wrapper';
-  const canvas = document.createElement('canvas');
-  wrapper.appendChild(canvas);
-  card.innerHTML = `<div class="chart-title">${title}</div><div class="chart-subtitle">${subtitle}</div>`;
-  card.appendChild(wrapper);
-  chartsGrid.appendChild(card);
-  return canvas;
-}
-
+/* ── Chart helpers ───────────────────────────────────────────────── */
 function chartDefaults() {
   return {
-    responsive: true,
-    maintainAspectRatio: false,
+    responsive: true, maintainAspectRatio: false,
     plugins: {
-      legend: { labels: { color: '#9ca3c0', font: { size: 11 } } },
-      tooltip: { backgroundColor: '#1e2333', titleColor: '#e8eaf0', bodyColor: '#9ca3c0' },
+      legend: { labels: { color: '#8b949e', font: { size: 11 } } },
+      tooltip: { backgroundColor: '#1c2128', titleColor: '#e6edf3', bodyColor: '#8b949e', borderColor: '#30363d', borderWidth: 1 },
     },
     scales: {
-      x: { ticks: { color: '#6b7394', font: { size: 11 } }, grid: { color: '#2a3047' } },
-      y: { ticks: { color: '#6b7394', font: { size: 11 } }, grid: { color: '#2a3047' } },
+      x: { ticks: { color: '#6e7681', font: { size: 11 } }, grid: { color: '#21262d' } },
+      y: { ticks: { color: '#6e7681', font: { size: 11 } }, grid: { color: '#21262d' } },
     },
   };
 }
 
-function renderCharts(results, models) {
-  const hasSpeed = models.some(m => results[m].speed && !results[m].speed.error);
-  const hasSTS   = models.some(m => results[m].sts   && !results[m].sts.error);
-  const hasCls   = models.some(m => results[m].classification && !results[m].classification.error);
-
-  // 1. Latency bar chart
-  if (hasSpeed) {
-    const canvas = makeChartCard('🚀 Latence moyenne', 'Temps moyen pour générer un embedding (ms, moins = mieux)');
-    const chart = new Chart(canvas, {
-      type: 'bar',
-      data: {
-        labels: models.map(shortName),
-        datasets: [{
-          label: 'Latence (ms)',
-          data: models.map(m => results[m].speed?.latency_mean_ms ?? null),
-          backgroundColor: models.map((_, i) => PALETTE[i % PALETTE.length] + 'cc'),
-          borderColor: models.map((_, i) => PALETTE[i % PALETTE.length]),
-          borderWidth: 2,
-          borderRadius: 6,
-        }],
-      },
-      options: {
-        ...chartDefaults(),
-        plugins: { ...chartDefaults().plugins, legend: { display: false } },
-        scales: { ...chartDefaults().scales, y: { ...chartDefaults().scales.y, beginAtZero: true } },
-      },
-    });
-    state.charts.push(chart);
-  }
-
-  // 2. Latency range (min/p95/max)
-  if (hasSpeed) {
-    const canvas = makeChartCard('📊 Distribution de latence', 'Min / P95 / Max par modèle');
-    const chart = new Chart(canvas, {
-      type: 'bar',
-      data: {
-        labels: models.filter(m => results[m].speed && !results[m].speed.error).map(shortName),
-        datasets: [
-          {
-            label: 'Min',
-            data: models.filter(m => results[m].speed && !results[m].speed.error).map(m => results[m].speed.latency_min_ms),
-            backgroundColor: '#00d4aa88',
-            borderColor: '#00d4aa',
-            borderWidth: 2, borderRadius: 6,
-          },
-          {
-            label: 'P95',
-            data: models.filter(m => results[m].speed && !results[m].speed.error).map(m => results[m].speed.latency_p95_ms),
-            backgroundColor: '#6c63ff88',
-            borderColor: '#6c63ff',
-            borderWidth: 2, borderRadius: 6,
-          },
-          {
-            label: 'Max',
-            data: models.filter(m => results[m].speed && !results[m].speed.error).map(m => results[m].speed.latency_max_ms),
-            backgroundColor: '#ff6b6b88',
-            borderColor: '#ff6b6b',
-            borderWidth: 2, borderRadius: 6,
-          },
-        ],
-      },
-      options: { ...chartDefaults(), scales: { ...chartDefaults().scales, y: { ...chartDefaults().scales.y, beginAtZero: true } } },
-    });
-    state.charts.push(chart);
-  }
-
-  // 3. STS Pearson r
-  if (hasSTS) {
-    const canvas = makeChartCard('🎯 Corrélation STS (Pearson r)', 'Corrélation avec les scores de similarité humains (plus élevé = mieux)');
-    const chart = new Chart(canvas, {
-      type: 'bar',
-      data: {
-        labels: models.map(shortName),
-        datasets: [{
-          label: 'Pearson r',
-          data: models.map(m => results[m].sts?.pearson_r ?? null),
-          backgroundColor: models.map((_, i) => PALETTE[i % PALETTE.length] + 'cc'),
-          borderColor: models.map((_, i) => PALETTE[i % PALETTE.length]),
-          borderWidth: 2, borderRadius: 6,
-        }],
-      },
-      options: {
-        ...chartDefaults(),
-        plugins: { ...chartDefaults().plugins, legend: { display: false } },
-        scales: {
-          ...chartDefaults().scales,
-          y: { ...chartDefaults().scales.y, min: -1, max: 1 },
-        },
-      },
-    });
-    state.charts.push(chart);
-  }
-
-  // 4. STS scatter: predicted vs ground truth (first model only)
-  if (hasSTS) {
-    const firstModel = models.find(m => results[m].sts && !results[m].sts.error);
-    if (firstModel) {
-      const sts = results[firstModel].sts;
-      const canvas = makeChartCard(
-        `🔬 Prédictions STS — ${shortName(firstModel)}`,
-        'Similarité prédite vs score humain (idéalement proche de y=x)'
-      );
-      const chart = new Chart(canvas, {
-        type: 'scatter',
-        data: {
-          datasets: [{
-            label: firstModel,
-            data: sts.ground_truth_similarities.map((gt, i) => ({ x: gt, y: sts.predicted_similarities[i] })),
-            backgroundColor: '#6c63ffcc',
-            pointRadius: 5,
-          }],
-        },
-        options: {
-          ...chartDefaults(),
-          scales: {
-            x: { ...chartDefaults().scales.x, title: { display: true, text: 'Score humain', color: '#6b7394' }, min: 0, max: 1 },
-            y: { ...chartDefaults().scales.y, title: { display: true, text: 'Cosine sim.', color: '#6b7394' }, min: 0, max: 1 },
-          },
-        },
-      });
-      state.charts.push(chart);
-    }
-  }
-
-  // 5. Classification metrics
-  if (hasCls) {
-    const canvas = makeChartCard('📦 Classification', 'Précision centroïde & score Silhouette');
-    const clsModels = models.filter(m => results[m].classification && !results[m].classification.error);
-    const chart = new Chart(canvas, {
-      type: 'bar',
-      data: {
-        labels: clsModels.map(shortName),
-        datasets: [
-          {
-            label: 'Précision (%)',
-            data: clsModels.map(m => +(results[m].classification.nearest_centroid_accuracy * 100).toFixed(1)),
-            backgroundColor: '#6c63ffcc', borderColor: '#6c63ff', borderWidth: 2, borderRadius: 6,
-          },
-          {
-            label: 'Silhouette (×100)',
-            data: clsModels.map(m => +(results[m].classification.silhouette_score * 100).toFixed(1)),
-            backgroundColor: '#00d4aa88', borderColor: '#00d4aa', borderWidth: 2, borderRadius: 6,
-          },
-        ],
-      },
-      options: { ...chartDefaults(), scales: { ...chartDefaults().scales, y: { ...chartDefaults().scales.y, beginAtZero: true } } },
-    });
-    state.charts.push(chart);
-  }
+function makeChartCard(parentId, title, sub) {
+  const card   = document.createElement('div');
+  card.className = 'chart-card';
+  const wrap   = document.createElement('div');
+  wrap.className = 'chart-wrap';
+  wrap.style.height = '220px';
+  const canvas = document.createElement('canvas');
+  wrap.appendChild(canvas);
+  card.innerHTML = `<div class="chart-title">${title}</div><div class="chart-sub">${sub}</div>`;
+  card.appendChild(wrap);
+  $(parentId).appendChild(card);
+  return canvas;
 }
 
-/* ── Detail tables ─────────────────────────────────────────────────────────── */
-function renderDetailTables(results, models) {
-  const hasSpeed = models.some(m => results[m].speed && !results[m].speed.error);
-  const hasSTS   = models.some(m => results[m].sts   && !results[m].sts.error);
-  const hasCls   = models.some(m => results[m].classification && !results[m].classification.error);
-
-  if (hasSpeed) {
-    const card = document.createElement('div');
-    card.className = 'table-card';
-    card.innerHTML = `
-      <div class="table-title">🚀 Résultats de vitesse</div>
-      <table>
-        <thead><tr>
-          <th>Modèle</th><th>Latence moy.</th><th>Latence min</th>
-          <th>P95</th><th>Max</th><th>Throughput</th><th>Dimensions</th>
-        </tr></thead>
-        <tbody id="speed-tbody"></tbody>
-      </table>`;
-    detailTables.appendChild(card);
-
-    const tbody = card.querySelector('#speed-tbody');
-    const speedModels = models.filter(m => results[m].speed && !results[m].speed.error);
-    const bestThroughput = Math.max(...speedModels.map(m => results[m].speed.throughput_texts_per_sec));
-
-    speedModels.forEach(model => {
-      const s = results[model].speed;
-      const isBest = s.throughput_texts_per_sec === bestThroughput;
-      const row = document.createElement('tr');
-      row.innerHTML = `
-        <td>${model}</td>
-        <td class="td-num">${s.latency_mean_ms} ms</td>
-        <td class="td-num">${s.latency_min_ms} ms</td>
-        <td class="td-num">${s.latency_p95_ms} ms</td>
-        <td class="td-num">${s.latency_max_ms} ms</td>
-        <td class="td-num ${isBest ? 'td-good' : ''}">${s.throughput_texts_per_sec} t/s</td>
-        <td class="td-num">${s.embedding_dim ?? '—'}</td>`;
-      tbody.appendChild(row);
-    });
-
-    // Show errors
-    models.filter(m => results[m].speed?.error).forEach(m => {
-      const row = document.createElement('tr');
-      row.innerHTML = `<td>${m}</td><td colspan="6" class="error-text">${results[m].speed.error}</td>`;
-      tbody.appendChild(row);
-    });
-  }
-
-  if (hasSTS) {
-    const card = document.createElement('div');
-    card.className = 'table-card';
-    card.innerHTML = `
-      <div class="table-title">🎯 Résultats STS</div>
-      <table>
-        <thead><tr>
-          <th>Modèle</th><th>Pearson r</th><th>Paires testées</th><th>Interprétation</th>
-        </tr></thead>
-        <tbody id="sts-tbody"></tbody>
-      </table>`;
-    detailTables.appendChild(card);
-
-    const tbody = card.querySelector('#sts-tbody');
-    models.filter(m => results[m].sts && !results[m].sts.error).forEach(model => {
-      const s = results[model].sts;
-      const pr = s.pearson_r;
-      const interpretation = pr > 0.7 ? 'Excellente' : pr > 0.5 ? 'Bonne' : pr > 0.3 ? 'Modérée' : 'Faible';
-      const cls = pr > 0.7 ? 'td-good' : pr < 0.3 ? 'td-bad' : '';
-      const row = document.createElement('tr');
-      row.innerHTML = `
-        <td>${model}</td>
-        <td class="td-num ${cls}">${pr.toFixed(4)}</td>
-        <td class="td-num">${s.num_pairs}</td>
-        <td class="${cls}">${interpretation}</td>`;
-      tbody.appendChild(row);
-    });
-  }
-
-  if (hasCls) {
-    const card = document.createElement('div');
-    card.className = 'table-card';
-    card.innerHTML = `
-      <div class="table-title">📦 Résultats de classification</div>
-      <table>
-        <thead><tr>
-          <th>Modèle</th><th>Précision centroïde</th><th>Score Silhouette</th>
-          <th>Textes</th><th>Classes</th>
-        </tr></thead>
-        <tbody id="cls-tbody"></tbody>
-      </table>`;
-    detailTables.appendChild(card);
-
-    const tbody = card.querySelector('#cls-tbody');
-    models.filter(m => results[m].classification && !results[m].classification.error).forEach(model => {
-      const c = results[model].classification;
-      const acc = c.nearest_centroid_accuracy;
-      const cls = acc > 0.8 ? 'td-good' : acc < 0.4 ? 'td-bad' : '';
-      const row = document.createElement('tr');
-      row.innerHTML = `
-        <td>${model}</td>
-        <td class="td-num ${cls}">${(acc * 100).toFixed(1)}%</td>
-        <td class="td-num">${c.silhouette_score.toFixed(4)}</td>
-        <td class="td-num">${c.num_texts}</td>
-        <td>${c.classes.join(', ')}</td>`;
-      tbody.appendChild(row);
-    });
-  }
-}
-
-/* ── Export ────────────────────────────────────────────────────────────────── */
-exportJSON.addEventListener('click', () => {
-  if (!state.results) return;
-  const blob = new Blob([JSON.stringify(state.results, null, 2)], { type: 'application/json' });
-  downloadBlob(blob, 'benchmark_results.json');
-});
-
-exportCSV.addEventListener('click', () => {
-  if (!state.results) return;
-  const rows = [['model','latency_mean_ms','throughput_t_s','embedding_dim','pearson_r','centroid_accuracy','silhouette']];
-  Object.entries(state.results).forEach(([model, r]) => {
-    rows.push([
-      model,
-      r.speed?.latency_mean_ms ?? '',
-      r.speed?.throughput_texts_per_sec ?? '',
-      r.speed?.embedding_dim ?? '',
-      r.sts?.pearson_r ?? '',
-      r.classification?.nearest_centroid_accuracy ?? '',
-      r.classification?.silhouette_score ?? '',
-    ]);
+function bar(canvas, labels, datasets, opts = {}) {
+  const c = new Chart(canvas, {
+    type: 'bar',
+    data: { labels: labels.map(s), datasets },
+    options: { ...chartDefaults(), ...opts },
   });
-  const csv = rows.map(r => r.join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
-  downloadBlob(blob, 'benchmark_results.csv');
-});
-
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
+  state.charts.push(c);
+  return c;
 }
 
-/* ── Helpers ───────────────────────────────────────────────────────────────── */
-function shortName(name) {
-  return name.length > 22 ? name.slice(0, 20) + '…' : name;
+function s(str) { return str.length > 18 ? str.slice(0, 16) + '…' : str; }
+function color(i, a = 1) {
+  const hex = PALETTE[i % PALETTE.length];
+  if (a === 1) return hex + 'cc';
+  return hex;
+}
+
+/* ── Overview tab ────────────────────────────────────────────────── */
+function renderOverview(models) {
+  // Leaderboard
+  const lb = $('leaderboard');
+  lb.innerHTML = '';
+  const sorted = [...models].sort((a, b) =>
+    (state.results[b]?.overall_score ?? 0) - (state.results[a]?.overall_score ?? 0));
+  const max = state.results[sorted[0]]?.overall_score ?? 100;
+
+  sorted.forEach((m, i) => {
+    const r = state.results[m];
+    const sc = r?.overall_score ?? null;
+    const row = document.createElement('div');
+    row.className = 'lb-row';
+    const rankEmoji = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`;
+    const pills = TESTS
+      .filter(t => r?.[t.key] && !r[t.key].error)
+      .map(t => `<span class="lb-pill">${t.icon}</span>`).join('');
+    row.innerHTML = `
+      <div class="lb-rank lb-rank-${i+1}">${rankEmoji}</div>
+      <div class="lb-name">${m}</div>
+      <div class="lb-bar-wrap"><div class="lb-bar" style="width:${sc?sc/max*100:0}%;background:${PALETTE[i%PALETTE.length]}"></div></div>
+      <div class="lb-pills">${pills}</div>
+      <div class="lb-score">${sc !== null ? sc : '—'}<small style="font-size:.6rem;color:var(--muted)">/100</small></div>`;
+    lb.appendChild(row);
+  });
+
+  // Radar chart
+  const radarCanvas = $('radar-chart');
+  if (radarCanvas._chart) { radarCanvas._chart.destroy(); }
+  const radarLabels = ['STS', 'Retrieval', 'Classification', 'Robustesse', 'Multilingue', 'Vitesse'];
+  const radarDatasets = models.map((m, i) => {
+    const r = state.results[m] || {};
+    return {
+      label: m,
+      data: [
+        r.sts?.pearson_r != null ? Math.max(0, r.sts.pearson_r) : null,
+        r.retrieval?.ndcg_at_5 ?? null,
+        r.classification?.nearest_centroid_accuracy ?? null,
+        r.robustness?.discrimination_ratio != null ? Math.min(1, Math.max(0, r.robustness.discrimination_ratio - 1)) : null,
+        r.multilingual?.alignment_score != null ? Math.min(1, Math.max(0, r.multilingual.alignment_score + 0.1)) : null,
+        r.speed?.latency_mean_ms != null ? Math.min(1, 1/(1+r.speed.latency_mean_ms/80)) : null,
+      ],
+      borderColor: PALETTE[i % PALETTE.length],
+      backgroundColor: PALETTE[i % PALETTE.length] + '22',
+      pointBackgroundColor: PALETTE[i % PALETTE.length],
+      borderWidth: 2,
+    };
+  });
+  const rc = new Chart(radarCanvas, {
+    type: 'radar',
+    data: { labels: radarLabels, datasets: radarDatasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: { r: { min: 0, max: 1, ticks: { display: false, stepSize: 0.2 }, grid: { color: '#30363d' }, pointLabels: { color: '#8b949e', font: { size: 11 } } } },
+      plugins: { legend: { labels: { color: '#8b949e', font: { size: 11 } } }, tooltip: { backgroundColor: '#1c2128', titleColor: '#e6edf3', bodyColor: '#8b949e' } },
+    },
+  });
+  radarCanvas._chart = rc;
+  state.charts.push(rc);
+
+  // Overall bar
+  const ovCanvas = $('overall-chart');
+  if (ovCanvas._chart) ovCanvas._chart.destroy();
+  const oc = bar(ovCanvas, sorted,
+    [{ label: 'Score /100', data: sorted.map(m => state.results[m]?.overall_score ?? 0), backgroundColor: sorted.map((_, i) => PALETTE[i % PALETTE.length] + 'cc'), borderColor: sorted.map((_, i) => PALETTE[i % PALETTE.length]), borderWidth: 2, borderRadius: 6 }],
+    { plugins: { ...chartDefaults().plugins, legend: { display: false } }, scales: { ...chartDefaults().scales, y: { ...chartDefaults().scales.y, beginAtZero: true, max: 100 } } }
+  );
+  ovCanvas._chart = oc;
+}
+
+/* ── Speed tab ───────────────────────────────────────────────────── */
+function renderSpeedTab(models) {
+  const c = $('speed-charts');
+  c.innerHTML = '';
+  const good = models.filter(m => state.results[m]?.speed?.latency_mean_ms != null);
+  if (!good.length) { c.innerHTML = '<p class="muted-sm">Pas de données de vitesse.</p>'; return; }
+
+  bar(makeChartCard('speed-charts', '⏱ Latence moyenne', 'ms par texte — moins = mieux'), good,
+    [{ label: 'Latence moy. (ms)', data: good.map(m => state.results[m].speed.latency_mean_ms), backgroundColor: good.map((_, i) => color(i)), borderColor: good.map((_, i) => PALETTE[i % PALETTE.length]), borderWidth: 2, borderRadius: 5 }],
+    { plugins: { ...chartDefaults().plugins, legend: { display: false } }, scales: { ...chartDefaults().scales, y: { ...chartDefaults().scales.y, beginAtZero: true } } });
+
+  // Distribution
+  const distCanvas = makeChartCard('speed-charts', '📊 Distribution de latence', 'Min / P50 / P95 / Max');
+  const distC = new Chart(distCanvas, {
+    type: 'bar',
+    data: {
+      labels: good.map(s),
+      datasets: [
+        { label: 'Min',  data: good.map(m => state.results[m].speed.latency_min_ms), backgroundColor: '#3fb95088', borderColor: '#3fb950', borderWidth: 2, borderRadius: 5 },
+        { label: 'P50',  data: good.map(m => state.results[m].speed.latency_p50_ms), backgroundColor: '#58a6ff88', borderColor: '#58a6ff', borderWidth: 2, borderRadius: 5 },
+        { label: 'P95',  data: good.map(m => state.results[m].speed.latency_p95_ms), backgroundColor: '#d2992288', borderColor: '#d29922', borderWidth: 2, borderRadius: 5 },
+        { label: 'Max',  data: good.map(m => state.results[m].speed.latency_max_ms), backgroundColor: '#f8514988', borderColor: '#f85149', borderWidth: 2, borderRadius: 5 },
+      ],
+    },
+    options: { ...chartDefaults(), scales: { ...chartDefaults().scales, y: { ...chartDefaults().scales.y, beginAtZero: true } } },
+  });
+  state.charts.push(distC);
+
+  bar(makeChartCard('speed-charts', '⚡ Throughput', 'Textes par seconde — plus = mieux'), good,
+    [{ label: 'Throughput (t/s)', data: good.map(m => state.results[m].speed.throughput_per_sec), backgroundColor: good.map((_, i) => color(i)), borderColor: good.map((_, i) => PALETTE[i % PALETTE.length]), borderWidth: 2, borderRadius: 5 }],
+    { plugins: { ...chartDefaults().plugins, legend: { display: false } }, scales: { ...chartDefaults().scales, y: { ...chartDefaults().scales.y, beginAtZero: true } } });
+
+  // Table
+  const t = $('speed-table');
+  const bestTP = Math.max(...good.map(m => state.results[m].speed.throughput_per_sec));
+  t.innerHTML = `<div class="table-title">🚀 Résultats de vitesse</div>
+  <table><thead><tr><th>Modèle</th><th>Latence moy.</th><th>P50</th><th>P95</th><th>Max</th><th>Throughput</th><th>Dim.</th></tr></thead>
+  <tbody>${good.map(m => {
+    const sp = state.results[m].speed;
+    const best = sp.throughput_per_sec === bestTP;
+    return `<tr><td class="mono">${m}</td><td class="num">${sp.latency_mean_ms} ms</td><td class="num">${sp.latency_p50_ms} ms</td><td class="num">${sp.latency_p95_ms} ms</td><td class="num">${sp.latency_max_ms} ms</td><td class="num ${best?'good':''}">${sp.throughput_per_sec} t/s</td><td class="num">${sp.embedding_dim ?? '—'}</td></tr>`;
+  }).join('')}</tbody></table>`;
+}
+
+/* ── STS tab ─────────────────────────────────────────────────────── */
+function renderSTSTab(models) {
+  const c = $('sts-charts');
+  c.innerHTML = '';
+  const good = models.filter(m => state.results[m]?.sts?.pearson_r != null);
+  if (!good.length) { c.innerHTML = '<p class="muted-sm">Pas de données STS.</p>'; return; }
+
+  bar(makeChartCard('sts-charts', '📈 Corrélation de Pearson', 'Corrélation avec les scores humains · plus proche de 1 = mieux'), good,
+    [{ label: 'Pearson r', data: good.map(m => state.results[m].sts.pearson_r), backgroundColor: good.map((_, i) => color(i)), borderColor: good.map((_, i) => PALETTE[i % PALETTE.length]), borderWidth: 2, borderRadius: 5 }],
+    { plugins: { ...chartDefaults().plugins, legend: { display: false } }, scales: { ...chartDefaults().scales, y: { ...chartDefaults().scales.y, min: -1, max: 1 } } });
+
+  // Scatter for first model
+  const fm = good[0];
+  const sts = state.results[fm].sts;
+  const scCanvas = makeChartCard('sts-charts', `🔬 Prédictions vs réalité — ${s(fm)}`, 'Similarité cosinus prédite vs score annoté humain');
+  const sc = new Chart(scCanvas, {
+    type: 'scatter',
+    data: { datasets: [{ label: fm, data: sts.ground_truth.map((gt, i) => ({ x: gt, y: sts.predicted[i] })), backgroundColor: '#58a6ffcc', pointRadius: 5 }] },
+    options: { ...chartDefaults(), scales: { x: { ...chartDefaults().scales.x, title: { display: true, text: 'Score humain', color: '#6e7681' }, min: 0, max: 1 }, y: { ...chartDefaults().scales.y, title: { display: true, text: 'Cosine sim.', color: '#6e7681' }, min: 0, max: 1 } } },
+  });
+  state.charts.push(sc);
+
+  $('sts-table').innerHTML = `<div class="table-title">🎯 Résultats STS</div>
+  <table><thead><tr><th>Modèle</th><th>Pearson r</th><th>Paires</th><th>Interprétation</th></tr></thead>
+  <tbody>${good.map(m => {
+    const pr = state.results[m].sts.pearson_r;
+    const cls = pr > 0.7 ? 'good' : pr > 0.5 ? 'ok' : 'bad';
+    const lbl = pr > 0.7 ? 'Excellent' : pr > 0.5 ? 'Bon' : pr > 0.3 ? 'Modéré' : 'Faible';
+    return `<tr><td class="mono">${m}</td><td class="num ${cls}">${pr.toFixed(4)}</td><td class="num">${state.results[m].sts.num_pairs}</td><td class="${cls}">${lbl}</td></tr>`;
+  }).join('')}</tbody></table>`;
+}
+
+/* ── Retrieval tab ───────────────────────────────────────────────── */
+function renderRetrievalTab(models) {
+  const c = $('retrieval-charts');
+  c.innerHTML = '';
+  const good = models.filter(m => state.results[m]?.retrieval?.ndcg_at_5 != null);
+  if (!good.length) { c.innerHTML = '<p class="muted-sm">Pas de données de retrieval.</p>'; return; }
+
+  const metrics = [
+    { key: 'ndcg_at_5', label: 'NDCG@5', color: '#58a6ff' },
+    { key: 'recall_at_5', label: 'Recall@5', color: '#3fb950' },
+    { key: 'mrr', label: 'MRR', color: '#d29922' },
+  ];
+  const canvas = makeChartCard('retrieval-charts', '🔎 Métriques de retrieval', 'NDCG@5 · Recall@5 · MRR — plus = mieux');
+  const rc = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: good.map(s),
+      datasets: metrics.map(({ key, label, color: col }) => ({
+        label, data: good.map(m => state.results[m].retrieval[key]),
+        backgroundColor: col + '88', borderColor: col, borderWidth: 2, borderRadius: 5,
+      })),
+    },
+    options: { ...chartDefaults(), scales: { ...chartDefaults().scales, y: { ...chartDefaults().scales.y, beginAtZero: true, max: 1 } } },
+  });
+  state.charts.push(rc);
+
+  // Per-query NDCG for first model
+  const fm = good[0];
+  const pq = state.results[fm].retrieval.per_query;
+  if (pq?.length) {
+    const qc = makeChartCard('retrieval-charts', `📋 NDCG@5 par requête — ${s(fm)}`, 'Performance par requête individuelle');
+    bar(qc, pq.map(q => q.query.slice(0, 28) + '…'),
+      [{ label: 'NDCG@5', data: pq.map(q => q['ndcg@5']), backgroundColor: '#58a6ffcc', borderColor: '#58a6ff', borderWidth: 2, borderRadius: 5 }],
+      { plugins: { ...chartDefaults().plugins, legend: { display: false } }, scales: { ...chartDefaults().scales, y: { ...chartDefaults().scales.y, beginAtZero: true, max: 1 } } });
+  }
+
+  const t = $('retrieval-table');
+  t.innerHTML = `<div class="table-title">🔎 Résultats de retrieval</div>
+  <table><thead><tr><th>Modèle</th><th>NDCG@5</th><th>NDCG@3</th><th>Recall@5</th><th>MRR</th><th>Requêtes</th></tr></thead>
+  <tbody>${good.map(m => {
+    const r = state.results[m].retrieval;
+    const cls = v => v > 0.8 ? 'good' : v > 0.5 ? 'ok' : 'bad';
+    return `<tr><td class="mono">${m}</td><td class="num ${cls(r.ndcg_at_5)}">${r.ndcg_at_5.toFixed(4)}</td><td class="num">${r.ndcg_at_3.toFixed(4)}</td><td class="num ${cls(r.recall_at_5)}">${r.recall_at_5.toFixed(4)}</td><td class="num ${cls(r.mrr)}">${r.mrr.toFixed(4)}</td><td class="num">${r.num_queries}</td></tr>`;
+  }).join('')}</tbody></table>`;
+}
+
+/* ── Classification tab ──────────────────────────────────────────── */
+function renderClassificationTab(models) {
+  const c = $('cls-charts');
+  c.innerHTML = '';
+  const good = models.filter(m => state.results[m]?.classification?.nearest_centroid_accuracy != null);
+  if (!good.length) { c.innerHTML = '<p class="muted-sm">Pas de données.</p>'; return; }
+
+  const canvas = makeChartCard('cls-charts', '📦 Métriques de classification', 'Précision centroïde & score Silhouette');
+  const ch = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: good.map(s),
+      datasets: [
+        { label: 'Précision (%)', data: good.map(m => +(state.results[m].classification.nearest_centroid_accuracy * 100).toFixed(1)), backgroundColor: '#58a6ff88', borderColor: '#58a6ff', borderWidth: 2, borderRadius: 5 },
+        { label: 'Silhouette ×100', data: good.map(m => +(state.results[m].classification.silhouette_score * 100).toFixed(1)), backgroundColor: '#3fb95088', borderColor: '#3fb950', borderWidth: 2, borderRadius: 5 },
+      ],
+    },
+    options: { ...chartDefaults(), scales: { ...chartDefaults().scales, y: { ...chartDefaults().scales.y, beginAtZero: true } } },
+  });
+  state.charts.push(ch);
+
+  $('cls-table').innerHTML = `<div class="table-title">📦 Résultats de classification</div>
+  <table><thead><tr><th>Modèle</th><th>Précision centroïde</th><th>Silhouette</th><th>Textes</th><th>Classes</th></tr></thead>
+  <tbody>${good.map(m => {
+    const cl = state.results[m].classification;
+    const cls = cl.nearest_centroid_accuracy > 0.8 ? 'good' : cl.nearest_centroid_accuracy > 0.5 ? 'ok' : 'bad';
+    return `<tr><td class="mono">${m}</td><td class="num ${cls}">${(cl.nearest_centroid_accuracy*100).toFixed(1)}%</td><td class="num">${cl.silhouette_score.toFixed(4)}</td><td class="num">${cl.num_texts}</td><td>${cl.classes.join(', ')}</td></tr>`;
+  }).join('')}</tbody></table>`;
+}
+
+/* ── Robustness tab ──────────────────────────────────────────────── */
+function renderRobustnessTab(models) {
+  const c = $('rob-charts');
+  c.innerHTML = '';
+  const good = models.filter(m => state.results[m]?.robustness?.discrimination_ratio != null);
+  if (!good.length) { c.innerHTML = '<p class="muted-sm">Pas de données.</p>'; return; }
+
+  const canvas = makeChartCard('rob-charts', '🛡 Similarité intra vs inter-groupe', 'Paraphrases (intra) doivent être plus similaires que les phrases différentes (inter)');
+  const ch = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: good.map(s),
+      datasets: [
+        { label: 'Intra-groupe', data: good.map(m => state.results[m].robustness.avg_intra_similarity), backgroundColor: '#3fb95088', borderColor: '#3fb950', borderWidth: 2, borderRadius: 5 },
+        { label: 'Inter-groupe', data: good.map(m => state.results[m].robustness.avg_inter_similarity), backgroundColor: '#f8514988', borderColor: '#f85149', borderWidth: 2, borderRadius: 5 },
+      ],
+    },
+    options: { ...chartDefaults(), scales: { ...chartDefaults().scales, y: { ...chartDefaults().scales.y, beginAtZero: true, max: 1 } } },
+  });
+  state.charts.push(ch);
+
+  bar(makeChartCard('rob-charts', '📐 Ratio de discrimination', 'intra_sim / inter_sim — plus = mieux (>1.5 bon, >2.0 excellent)'), good,
+    [{ label: 'Ratio', data: good.map(m => state.results[m].robustness.discrimination_ratio), backgroundColor: good.map((_, i) => color(i)), borderColor: good.map((_, i) => PALETTE[i % PALETTE.length]), borderWidth: 2, borderRadius: 5 }],
+    { plugins: { ...chartDefaults().plugins, legend: { display: false } }, scales: { ...chartDefaults().scales, y: { ...chartDefaults().scales.y, beginAtZero: true } } });
+
+  $('rob-table').innerHTML = `<div class="table-title">🛡 Résultats de robustesse</div>
+  <table><thead><tr><th>Modèle</th><th>Sim. intra</th><th>Sim. inter</th><th>Ratio discrimination</th><th>Groupes</th></tr></thead>
+  <tbody>${good.map(m => {
+    const r = state.results[m].robustness;
+    const cls = r.discrimination_ratio > 2 ? 'good' : r.discrimination_ratio > 1.5 ? 'ok' : 'bad';
+    return `<tr><td class="mono">${m}</td><td class="num">${r.avg_intra_similarity.toFixed(4)}</td><td class="num">${r.avg_inter_similarity.toFixed(4)}</td><td class="num ${cls}">${r.discrimination_ratio.toFixed(4)}</td><td class="num">${r.num_groups}</td></tr>`;
+  }).join('')}</tbody></table>`;
+}
+
+/* ── Multilingual tab ────────────────────────────────────────────── */
+function renderMultilingualTab(models) {
+  const c = $('multi-charts');
+  c.innerHTML = '';
+  const good = models.filter(m => state.results[m]?.multilingual?.alignment_score != null);
+  if (!good.length) { c.innerHTML = '<p class="muted-sm">Pas de données.</p>'; return; }
+
+  const canvas = makeChartCard('multi-charts', '🌍 Similarité des paires de traduction', 'Similarité cosinus entre phrases de même sens dans des langues différentes');
+  const ch = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: good.map(s),
+      datasets: [
+        { label: 'Sim. traduction', data: good.map(m => state.results[m].multilingual.avg_similarity), backgroundColor: '#58a6ff88', borderColor: '#58a6ff', borderWidth: 2, borderRadius: 5 },
+        { label: 'Sim. non-traduction', data: good.map(m => state.results[m].multilingual.avg_non_translation_sim), backgroundColor: '#f8514988', borderColor: '#f85149', borderWidth: 2, borderRadius: 5 },
+      ],
+    },
+    options: { ...chartDefaults(), scales: { ...chartDefaults().scales, y: { ...chartDefaults().scales.y, beginAtZero: true, max: 1 } } },
+  });
+  state.charts.push(ch);
+
+  bar(makeChartCard('multi-charts', '📐 Score d\'alignement', 'sim_traduction − sim_non_traduction · >0.3 = bon modèle multilingue'), good,
+    [{ label: 'Alignement', data: good.map(m => state.results[m].multilingual.alignment_score), backgroundColor: good.map((_, i) => color(i)), borderColor: good.map((_, i) => PALETTE[i % PALETTE.length]), borderWidth: 2, borderRadius: 5 }],
+    { plugins: { ...chartDefaults().plugins, legend: { display: false } }, scales: { ...chartDefaults().scales, y: { ...chartDefaults().scales.y } } });
+
+  // Per-pair details for first model
+  const fm = good[0];
+  const details = state.results[fm].multilingual.details;
+  if (details?.length) {
+    const pairs = details.slice(0, 15);
+    const pairC = makeChartCard('multi-charts', `🔠 Similarité par paire — ${s(fm)}`, 'Chaque paire de traduction (EN → autre langue)');
+    pairC.style.gridColumn = '1 / -1';
+    bar(pairC, pairs.map(p => p.lang),
+      [{ label: 'Similarité', data: pairs.map(p => p.similarity), backgroundColor: pairs.map(p => p.similarity > 0.7 ? '#3fb95088' : p.similarity > 0.5 ? '#d2992288' : '#f8514988'), borderColor: pairs.map(p => p.similarity > 0.7 ? '#3fb950' : p.similarity > 0.5 ? '#d29922' : '#f85149'), borderWidth: 2, borderRadius: 5 }],
+      { plugins: { ...chartDefaults().plugins, legend: { display: false } }, scales: { ...chartDefaults().scales, y: { ...chartDefaults().scales.y, beginAtZero: true, max: 1 } } });
+  }
+
+  $('multi-table').innerHTML = `<div class="table-title">🌍 Résultats multilingues</div>
+  <table><thead><tr><th>Modèle</th><th>Sim. traduction</th><th>Sim. non-traduction</th><th>Score alignement</th><th>Paires</th></tr></thead>
+  <tbody>${good.map(m => {
+    const r = state.results[m].multilingual;
+    const cls = r.alignment_score > 0.3 ? 'good' : r.alignment_score > 0.1 ? 'ok' : 'bad';
+    return `<tr><td class="mono">${m}</td><td class="num">${r.avg_similarity.toFixed(4)}</td><td class="num">${r.avg_non_translation_sim.toFixed(4)}</td><td class="num ${cls}">${r.alignment_score.toFixed(4)}</td><td class="num">${r.num_pairs}</td></tr>`;
+  }).join('')}</tbody></table>`;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   PCA Visualization
+══════════════════════════════════════════════════════════════════ */
+function initViz() {
+  $('viz-run-btn').addEventListener('click', runVisualization);
+}
+
+function initVizForResults(models) {
+  const sel = $('viz-model-select');
+  sel.innerHTML = '';
+  models.forEach(m => sel.insertAdjacentHTML('beforeend', `<option value="${m}">${m}</option>`));
+}
+
+async function runVisualization() {
+  const model = $('viz-model-select').value;
+  if (!model) return alert('Sélectionnez un modèle.');
+  const btn = $('viz-run-btn');
+  btn.textContent = '⏳ Calcul…';
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/visualize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model }),
+    });
+    const d = await r.json();
+    renderPCA(d, model);
+  } catch (e) {
+    alert('Erreur : ' + e.message);
+  } finally {
+    btn.textContent = '↻ Recalculer';
+    btn.disabled = false;
+  }
+}
+
+function renderPCA(data, model) {
+  if (state.pcaChart) { state.pcaChart.destroy(); state.pcaChart = null; }
+  const { points, labels, texts } = data;
+  const uniqueLabels = [...new Set(labels)];
+  const datasets = uniqueLabels.map((lbl, i) => {
+    const idxs = labels.map((l, j) => l === lbl ? j : -1).filter(j => j >= 0);
+    return {
+      label: lbl,
+      data: idxs.map(j => ({ x: points[j][0], y: points[j][1], text: texts[j] })),
+      backgroundColor: PALETTE[i % PALETTE.length] + 'bb',
+      pointRadius: 7,
+    };
+  });
+  const canvas = $('pca-chart');
+  state.pcaChart = new Chart(canvas, {
+    type: 'scatter',
+    data: { datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#8b949e', font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: '#1c2128', titleColor: '#e6edf3', bodyColor: '#8b949e',
+          callbacks: { label: ctx => ctx.raw.text?.slice(0, 60) || '' },
+        },
+        title: { display: true, text: `PCA 2D — ${model}`, color: '#8b949e', font: { size: 12 } },
+      },
+      scales: {
+        x: { ticks: { display: false }, grid: { color: '#21262d' } },
+        y: { ticks: { display: false }, grid: { color: '#21262d' } },
+      },
+    },
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Similarity Explorer
+══════════════════════════════════════════════════════════════════ */
+function initExplorer() {
+  const modelSel = $('exp-model');
+  const runBtn   = $('exp-run');
+  modelSel.addEventListener('change', () => { runBtn.disabled = !modelSel.value; });
+  runBtn.addEventListener('click', runExplorer);
+}
+
+async function runExplorer() {
+  const model = $('exp-model').value;
+  const ta    = $('exp-text-a').value.trim();
+  const tb    = $('exp-text-b').value.trim();
+  if (!model || !ta || !tb) return alert('Remplissez tous les champs.');
+  const btn = $('exp-run');
+  btn.textContent = '⏳ Calcul…'; btn.disabled = true;
+  try {
+    const r = await fetch('/api/explore/similarity', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, text_a: ta, text_b: tb }),
+    });
+    const d = await r.json();
+    renderGauge(d);
+  } catch (e) {
+    alert('Erreur : ' + e.message);
+  } finally {
+    btn.textContent = 'Calculer la similarité'; btn.disabled = !model;
+  }
+}
+
+function renderGauge(data) {
+  const { similarity, magnitude_a, magnitude_b, dim } = data;
+  const sim = similarity;
+  $('exp-result').classList.remove('hidden');
+  $('sim-score-txt').textContent = sim.toFixed(3);
+  const col = sim > 0.7 ? '#3fb950' : sim > 0.4 ? '#d29922' : '#f85149';
+
+  if (state.gaugeChart) state.gaugeChart.destroy();
+  state.gaugeChart = new Chart($('sim-gauge'), {
+    type: 'doughnut',
+    data: {
+      datasets: [{ data: [Math.max(0, sim), Math.max(0, 1 - sim)], backgroundColor: [col, '#21262d'], borderWidth: 0, circumference: 270, rotation: 225 }],
+    },
+    options: { responsive: false, cutout: '78%', plugins: { legend: { display: false }, tooltip: { enabled: false } } },
+  });
+
+  const interp = sim > 0.85 ? 'Quasi-identique' : sim > 0.7 ? 'Très similaire' : sim > 0.5 ? 'Modérément similaire' : sim > 0.3 ? 'Peu similaire' : 'Non similaire';
+  $('sim-meta').innerHTML = `
+    <div>Interprétation : <span>${interp}</span></div>
+    <div>Dimension : <span>${dim}</span></div>
+    <div>‖A‖ : <span>${magnitude_a}</span> · ‖B‖ : <span>${magnitude_b}</span></div>`;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   History (localStorage)
+══════════════════════════════════════════════════════════════════ */
+function initHistory() {
+  renderHistoryList();
+  $('clear-history').addEventListener('click', () => {
+    if (!confirm('Effacer tout l\'historique ?')) return;
+    localStorage.removeItem('eb_history');
+    renderHistoryList();
+  });
+  $('save-history').addEventListener('click', saveToHistory);
+}
+
+function saveToHistory() {
+  if (!Object.keys(state.results).length) return alert('Aucun résultat à sauvegarder.');
+  const history = JSON.parse(localStorage.getItem('eb_history') || '[]');
+  history.unshift({ date: new Date().toISOString(), results: state.results });
+  if (history.length > 20) history.length = 20;
+  localStorage.setItem('eb_history', JSON.stringify(history));
+  renderHistoryList();
+  alert('Run sauvegardé dans l\'historique.');
+}
+
+function renderHistoryList() {
+  const history = JSON.parse(localStorage.getItem('eb_history') || '[]');
+  const el = $('history-list');
+  if (!history.length) { el.innerHTML = '<p class="muted-sm">Aucun run enregistré.</p>'; return; }
+  el.innerHTML = '';
+  history.forEach((run, i) => {
+    const models = Object.keys(run.results);
+    const div = document.createElement('div');
+    div.className = 'history-item';
+    div.innerHTML = `
+      <div class="history-item-date">${new Date(run.date).toLocaleString('fr-FR')}</div>
+      <div class="history-item-models">${models.join(', ')}</div>`;
+    div.addEventListener('click', () => {
+      state.results = run.results;
+      state.charts.forEach(c => c.destroy());
+      state.charts = [];
+      hero.classList.add('hidden');
+      progressView.classList.add('hidden');
+      resultsView.classList.remove('hidden');
+      renderResults();
+      document.querySelector('.nav-btn[data-view="benchmark"]').click();
+    });
+    el.appendChild(div);
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Export
+══════════════════════════════════════════════════════════════════ */
+$('export-json').addEventListener('click', () => {
+  if (!Object.keys(state.results).length) return;
+  dl(new Blob([JSON.stringify(state.results, null, 2)], { type: 'application/json' }), 'benchmark.json');
+});
+
+$('export-csv').addEventListener('click', () => {
+  if (!Object.keys(state.results).length) return;
+  const rows = [['model','overall_score','latency_ms','throughput','dim','pearson_r','ndcg5','recall5','mrr','cls_accuracy','silhouette','discrim_ratio','multilingual_alignment']];
+  Object.entries(state.results).forEach(([m, r]) => rows.push([
+    m, r.overall_score ?? '',
+    r.speed?.latency_mean_ms ?? '', r.speed?.throughput_per_sec ?? '', r.speed?.embedding_dim ?? '',
+    r.sts?.pearson_r ?? '',
+    r.retrieval?.ndcg_at_5 ?? '', r.retrieval?.recall_at_5 ?? '', r.retrieval?.mrr ?? '',
+    r.classification?.nearest_centroid_accuracy ?? '', r.classification?.silhouette_score ?? '',
+    r.robustness?.discrimination_ratio ?? '',
+    r.multilingual?.alignment_score ?? '',
+  ]));
+  dl(new Blob([rows.map(r => r.join(',')).join('\n')], { type: 'text/csv' }), 'benchmark.csv');
+});
+
+function dl(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  URL.revokeObjectURL(a.href);
 }
