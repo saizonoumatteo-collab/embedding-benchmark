@@ -32,7 +32,8 @@ const PRESETS = {
 const $ = id => document.getElementById(id);
 
 (async () => {
-  await checkHealth();
+  // Health check and model load run concurrently — UI never blocks on Ollama status
+  checkHealth();
   await loadModels();
   initNav();
   initTabs();
@@ -48,31 +49,50 @@ const $ = id => document.getElementById(id);
 /* ══════════════════════════════════════════════════════════
    Health
 ══════════════════════════════════════════════════════════ */
+let _healthOk = false;
+
 async function checkHealth() {
   const el = $('ollama-status');
+  const ctrl = new AbortController();
+  const tid = setTimeout(() => ctrl.abort(), 3000); // 3s timeout
   try {
-    const d = await (await fetch('/api/health')).json();
+    const d = await (await fetch('/api/health', { signal: ctrl.signal })).json();
+    clearTimeout(tid);
     if (d.ollama === 'ok') {
+      if (!_healthOk) { _healthOk = true; loadModels(); } // reload model list when Ollama comes online
       el.className = 'badge badge-ok';
       el.innerHTML = '<span class="dot"></span><span class="badge-label">Ollama connecté</span>';
-    } else throw new Error();
+    } else {
+      _healthOk = false;
+      el.className = 'badge badge-error';
+      el.innerHTML = '<span class="dot"></span><span class="badge-label">Ollama hors ligne</span>';
+    }
   } catch {
+    clearTimeout(tid);
+    _healthOk = false;
     el.className = 'badge badge-error';
     el.innerHTML = '<span class="dot"></span><span class="badge-label">Ollama hors ligne</span>';
   }
 }
+
+// Poll every 5s so the badge auto-updates when Ollama starts/stops
+setInterval(checkHealth, 5000);
 
 /* ══════════════════════════════════════════════════════════
    Models
 ══════════════════════════════════════════════════════════ */
 async function loadModels() {
   $('model-list').innerHTML = '<p class="muted-sm">Chargement…</p>';
+  const ctrl = new AbortController();
+  const tid = setTimeout(() => ctrl.abort(), 5000);
   try {
-    const d = await (await fetch('/api/models')).json();
+    const d = await (await fetch('/api/models', { signal: ctrl.signal })).json();
+    clearTimeout(tid);
     state.models = d.models; state.embTagged = new Set(d.embedding_tagged);
     renderModels(); populateAllSelects();
   } catch (e) {
-    $('model-list').innerHTML = `<p class="muted-sm" style="color:var(--red)">Erreur : ${e.message}</p>`;
+    clearTimeout(tid);
+    $('model-list').innerHTML = `<p class="muted-sm" style="color:var(--red)">Ollama non disponible — démarrez Ollama puis rafraîchissez.</p>`;
   }
 }
 
