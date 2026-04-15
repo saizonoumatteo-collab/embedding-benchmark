@@ -336,7 +336,7 @@ function renderOverview(models) {
     const r=state.results[m]||{};
     return {label:m,data:[
       r.sts?.pearson_r!=null?Math.max(0,r.sts.pearson_r):null,
-      r.retrieval?.ndcg_at_5??null,
+      r.retrieval!=null?(((r.retrieval.ndcg_at_5??0)*0.6)+((r.retrieval.top1_accuracy??r.retrieval.ndcg_at_5??0)*0.2)+((r.retrieval.hard_negative_rejection??r.retrieval.ndcg_at_5??0)*0.2)):null,
       r.classification?.nearest_centroid_accuracy??null,
       r.robustness?.discrimination_ratio!=null?Math.min(1,Math.max(0,r.robustness.discrimination_ratio-1)):null,
       r.multilingual?.alignment_score!=null?Math.min(1,Math.max(0,r.multilingual.alignment_score+0.1)):null,
@@ -434,33 +434,102 @@ function renderSTSTab(models) {
 }
 
 /* ── Retrieval ───────────────────────────────────────────── */
+const QUERY_TYPE_META = {
+  standard:           { label:'Standard',           color:'#58a6ff', icon:'📋' },
+  hard_negatives:     { label:'Hard Negatives',     color:'#f85149', icon:'🧲' },
+  contradiction:      { label:'Contradiction',      color:'#ff7b72', icon:'⚡' },
+  multi_hop:          { label:'Multi-hop',          color:'#d29922', icon:'🔗' },
+  ambiguous:          { label:'Ambigu',             color:'#bc8cff', icon:'❓' },
+  noisy_query:        { label:'Bruit linguistique', color:'#3fb950', icon:'📢' },
+  long_document:      { label:'Long document',      color:'#79c0ff', icon:'📄' },
+  partial_query:      { label:'Requête partielle',  color:'#ffa657', icon:'✂️' },
+  semantic_distractor:{ label:'Distracteur',        color:'#e3b341', icon:'🪞' },
+};
+
 function renderRetrievalTab(models) {
   const c=$('retrieval-charts'); c.innerHTML='';
   const good=models.filter(m=>state.results[m]?.retrieval?.ndcg_at_5!=null);
   if(!good.length){c.innerHTML='<p class="muted-sm">Pas de données.</p>';return;}
 
-  const rc=makeCard('retrieval-charts','🔎 Métriques de retrieval','NDCG@5 · Recall@5 · MRR — plus = mieux');
+  // ── 1. Core metrics bar chart ───────────────────────────────────
+  const rc=makeCard('retrieval-charts','🔎 Métriques de retrieval','NDCG@5 · Recall@5 · MRR · Top-1 — plus = mieux');
   const rC=new Chart(rc,{type:'bar',data:{labels:good.map(s),datasets:[
-    {label:'NDCG@5',  data:good.map(m=>state.results[m].retrieval.ndcg_at_5),  backgroundColor:'#58a6ff88',borderColor:'#58a6ff',borderWidth:2,borderRadius:4},
-    {label:'Recall@5',data:good.map(m=>state.results[m].retrieval.recall_at_5),backgroundColor:'#3fb95088',borderColor:'#3fb950',borderWidth:2,borderRadius:4},
-    {label:'MRR',     data:good.map(m=>state.results[m].retrieval.mrr),         backgroundColor:'#d2992288',borderColor:'#d29922',borderWidth:2,borderRadius:4},
+    {label:'NDCG@5',   data:good.map(m=>state.results[m].retrieval.ndcg_at_5),   backgroundColor:'#58a6ff88',borderColor:'#58a6ff',borderWidth:2,borderRadius:4},
+    {label:'Recall@5', data:good.map(m=>state.results[m].retrieval.recall_at_5), backgroundColor:'#3fb95088',borderColor:'#3fb950',borderWidth:2,borderRadius:4},
+    {label:'MRR',      data:good.map(m=>state.results[m].retrieval.mrr),          backgroundColor:'#d2992288',borderColor:'#d29922',borderWidth:2,borderRadius:4},
+    {label:'Top-1 Acc',data:good.map(m=>state.results[m].retrieval.top1_accuracy??null), backgroundColor:'#bc8cff88',borderColor:'#bc8cff',borderWidth:2,borderRadius:4},
   ]},options:{...CD(),scales:{...CD().scales,y:{...CD().scales.y,beginAtZero:true,max:1}}}});
   state.charts.push(rC);
 
-  // Per-query heatmap-bar for first model
-  const fm=good[0]; const pq=state.results[fm].retrieval.per_query;
-  if(pq?.length) {
-    const qc=makeCard('retrieval-charts',`📋 NDCG@5 par requête — ${s(fm)}`,'Performance individuelle sur chaque requête');
-    barChart(qc, pq.map(q=>q.query.slice(0,30)),
-      [{label:'NDCG@5',data:pq.map(q=>q['ndcg@5']),backgroundColor:pq.map(q=>q['ndcg@5']>0.8?'#3fb95088':q['ndcg@5']>0.5?'#d2992288':'#f8514988'),borderColor:pq.map(q=>q['ndcg@5']>0.8?'#3fb950':q['ndcg@5']>0.5?'#d29922':'#f85149'),borderWidth:2,borderRadius:4}],
-      {plugins:{...CD().plugins,legend:{display:false}},scales:{...CD().scales,y:{...CD().scales.y,beginAtZero:true,max:1}}});
+  // ── 2. Hard difficulty metrics ──────────────────────────────────
+  const hasHard = good.some(m=>{const r=state.results[m].retrieval; return r.hard_negative_rejection!=null||r.contradiction_rejection!=null;});
+  if(hasHard) {
+    const hc=makeCard('retrieval-charts','🧲 Résistance aux négatifs difficiles','Capacité à écarter les documents trompeurs — plus = mieux');
+    const hC=new Chart(hc,{type:'bar',data:{labels:good.map(s),datasets:[
+      {label:'Rejet Hard Neg', data:good.map(m=>state.results[m].retrieval.hard_negative_rejection??null), backgroundColor:'#f8514988',borderColor:'#f85149',borderWidth:2,borderRadius:4},
+      {label:'Rejet Contradiction',data:good.map(m=>state.results[m].retrieval.contradiction_rejection??null), backgroundColor:'#ff7b7288',borderColor:'#ff7b72',borderWidth:2,borderRadius:4},
+      {label:'Rejet Distracteur',  data:good.map(m=>state.results[m].retrieval.distractor_rejection??null),   backgroundColor:'#e3b34188',borderColor:'#e3b341',borderWidth:2,borderRadius:4},
+      {label:'NDCG@5 (hard only)', data:good.map(m=>state.results[m].retrieval.ndcg_at_5_hard_only??null),   backgroundColor:'#d2992288',borderColor:'#d29922',borderWidth:2,borderRadius:4},
+    ]},options:{...CD(),scales:{...CD().scales,y:{...CD().scales.y,beginAtZero:true,max:1}}}});
+    state.charts.push(hC);
   }
 
-  $('retrieval-table').innerHTML=`<div class="table-title">🔎 Résultats de retrieval</div>
-  <table><thead><tr><th>Modèle</th><th>NDCG@5</th><th>NDCG@3</th><th>Recall@5</th><th>MRR</th></tr></thead><tbody>${good.map(m=>{
-    const r=state.results[m].retrieval; const v=x=>x>0.8?'good':x>0.5?'ok':'bad';
-    return `<tr><td class="mono">${m}</td><td class="num ${v(r.ndcg_at_5)}">${r.ndcg_at_5.toFixed(4)}</td><td class="num">${r.ndcg_at_3.toFixed(4)}</td><td class="num ${v(r.recall_at_5)}">${r.recall_at_5.toFixed(4)}</td><td class="num ${v(r.mrr)}">${r.mrr.toFixed(4)}</td></tr>`;
-  }).join('')}</tbody></table>`;
+  // ── 3. NDCG@5 by query type (first model, horizontal bar) ──────
+  const fm=good[0]; const ret0=state.results[fm].retrieval;
+  if(ret0.ndcg_by_type && Object.keys(ret0.ndcg_by_type).length>1) {
+    const types=Object.keys(ret0.ndcg_by_type);
+    const tc=makeCard('retrieval-charts',`📊 NDCG@5 par type de requête — ${s(fm)}`,'Difficulté croissante selon le type de challenge');
+    const tC=new Chart(tc,{type:'bar',
+      data:{
+        labels: types.map(t=>(QUERY_TYPE_META[t]?.icon||'')+'  '+(QUERY_TYPE_META[t]?.label||t)),
+        datasets:[{
+          label:'NDCG@5',
+          data:types.map(t=>ret0.ndcg_by_type[t]),
+          backgroundColor:types.map(t=>(QUERY_TYPE_META[t]?.color||'#58a6ff')+'88'),
+          borderColor:types.map(t=>QUERY_TYPE_META[t]?.color||'#58a6ff'),
+          borderWidth:2,borderRadius:4
+        }]
+      },
+      options:{...CD(),indexAxis:'y',plugins:{...CD().plugins,legend:{display:false}},
+               scales:{...CD().scales,x:{...CD().scales.y,beginAtZero:true,max:1}}}});
+    state.charts.push(tC);
+  }
+
+  // ── 4. Per-query detail (first model) ──────────────────────────
+  const pq=ret0.per_query;
+  if(pq?.length) {
+    const qc=makeCard('retrieval-charts',`📋 NDCG@5 par requête — ${s(fm)}`,'Couleur = type · vert > 0.8 · orange > 0.5 · rouge ≤ 0.5');
+    barChart(qc, pq.map(q=>(QUERY_TYPE_META[q.query_type]?.icon||'')+'  '+q.query.slice(0,32)),
+      [{label:'NDCG@5',
+        data:pq.map(q=>q['ndcg@5']),
+        backgroundColor:pq.map(q=>q['ndcg@5']>0.8?'#3fb95088':q['ndcg@5']>0.5?'#d2992288':'#f8514988'),
+        borderColor:pq.map(q=>q['ndcg@5']>0.8?'#3fb950':q['ndcg@5']>0.5?'#d29922':'#f85149'),
+        borderWidth:2,borderRadius:4}],
+      {plugins:{...CD().plugins,legend:{display:false}},
+       scales:{...CD().scales,y:{...CD().scales.y,beginAtZero:true,max:1}}});
+  }
+
+  // ── 5. Summary table ───────────────────────────────────────────
+  const v=x=>x==null?'—':x>0.8?'<span class="num good">'+x.toFixed(3)+'</span>':x>0.5?'<span class="num ok">'+x.toFixed(3)+'</span>':'<span class="num bad">'+x.toFixed(3)+'</span>';
+  $('retrieval-table').innerHTML=`
+  <div class="table-title">🔎 Résultats de retrieval avancé</div>
+  <table>
+    <thead><tr>
+      <th>Modèle</th>
+      <th title="Normalized Discounted Cumulative Gain @5">NDCG@5</th>
+      <th title="NDCG sur les requêtes avec hard negatives uniquement">NDCG@5 (hard)</th>
+      <th title="Recall dans les 5 premiers résultats">Recall@5</th>
+      <th title="Mean Reciprocal Rank">MRR</th>
+      <th title="Le 1er résultat est-il pertinent?">Top-1</th>
+      <th title="Hard negatives correctement rejetés">HN Rejet</th>
+      <th title="Contradictions correctement rejetées">Contra. Rejet</th>
+    </tr></thead>
+    <tbody>${good.map(m=>{
+      const r=state.results[m].retrieval;
+      return `<tr><td class="mono">${m}</td>${[r.ndcg_at_5,r.ndcg_at_5_hard_only,r.recall_at_5,r.mrr,r.top1_accuracy,r.hard_negative_rejection,r.contradiction_rejection].map(v).join('')}</tr>`;
+    }).join('')}</tbody>
+  </table>
+  <p class="muted-sm" style="margin-top:8px">12 requêtes · 7 types · hard negatives · contradictions · multi-hop · ambigu · bruit · long doc</p>`;
 }
 
 /* ── Classification ──────────────────────────────────────── */
@@ -891,8 +960,20 @@ function renderHistoryList() {
 $('export-json').addEventListener('click',()=>{ if(!Object.keys(state.results).length) return; dl(new Blob([JSON.stringify(state.results,null,2)],{type:'application/json'}),'benchmark.json'); });
 $('export-csv').addEventListener('click',()=>{
   if(!Object.keys(state.results).length) return;
-  const rows=[['model','overall','latency_ms','throughput','dim','pearson_r','ndcg5','recall5','mrr','cls_acc','silhouette','discrimination','multilingual','negation_awareness','monotonicity']];
-  Object.entries(state.results).forEach(([m,r])=>rows.push([m,r.overall_score??'',r.speed?.latency_mean_ms??'',r.speed?.throughput_per_sec??'',r.speed?.embedding_dim??'',r.sts?.pearson_r??'',r.retrieval?.ndcg_at_5??'',r.retrieval?.recall_at_5??'',r.retrieval?.mrr??'',r.classification?.nearest_centroid_accuracy??'',r.classification?.silhouette_score??'',r.robustness?.discrimination_ratio??'',r.multilingual?.alignment_score??'',r.negation?.negation_awareness??'',r.topic_drift?.monotonicity_score??'']));
+  const rows=[['model','overall','latency_ms','throughput','dim','pearson_r',
+    'ndcg5','ndcg5_hard','recall5','mrr','top1_accuracy',
+    'hn_rejection','contra_rejection','distractor_rejection',
+    'cls_acc','silhouette','discrimination','multilingual','negation_awareness','monotonicity']];
+  Object.entries(state.results).forEach(([m,r])=>rows.push([
+    m, r.overall_score??'', r.speed?.latency_mean_ms??'', r.speed?.throughput_per_sec??'', r.speed?.embedding_dim??'',
+    r.sts?.pearson_r??'',
+    r.retrieval?.ndcg_at_5??'', r.retrieval?.ndcg_at_5_hard_only??'',
+    r.retrieval?.recall_at_5??'', r.retrieval?.mrr??'', r.retrieval?.top1_accuracy??'',
+    r.retrieval?.hard_negative_rejection??'', r.retrieval?.contradiction_rejection??'', r.retrieval?.distractor_rejection??'',
+    r.classification?.nearest_centroid_accuracy??'', r.classification?.silhouette_score??'',
+    r.robustness?.discrimination_ratio??'', r.multilingual?.alignment_score??'',
+    r.negation?.negation_awareness??'', r.topic_drift?.monotonicity_score??'',
+  ]));
   dl(new Blob([rows.map(r=>r.join(',')).join('\n')],{type:'text/csv'}),'benchmark.csv');
 });
 function dl(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href);}
