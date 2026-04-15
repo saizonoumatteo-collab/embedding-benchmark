@@ -121,8 +121,8 @@ function populateAllSelects() {
     el.innerHTML = `<option value="">— sélectionner —</option>`;
     state.models.forEach(m => el.insertAdjacentHTML('beforeend', `<option ${m===prev?'selected':''} value="${m}">${m}</option>`));
   });
-  $('exp-run') && ($('exp-run').disabled = !($('exp-model') && $('exp-model').value));
-  $('hm-run')  && ($('hm-run').disabled  = !($('hm-model') && $('hm-model').value));
+  $('exp-run') && ($('exp-run').disabled = !$('exp-model')?.value);
+  $('hm-run')  && ($('hm-run').disabled  = !$('hm-model')?.value);
 }
 
 $('refresh-models').addEventListener('click', loadModels);
@@ -189,7 +189,7 @@ function initTabs() {
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab===name));
   document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
-  var _tc=$('tab-'+name); _tc && _tc.classList.remove('hidden');
+  $(`tab-${name}`)?.classList.remove('hidden');
   state.activeTab = name;
 }
 
@@ -276,7 +276,7 @@ async function runBenchmark() {
         if(!line.startsWith('data: ')) continue;
         const ev=JSON.parse(line.slice(6));
         if(ev.type==='model_start') { $('progress-model').textContent=ev.model; $('progress-test').textContent='Démarrage…'; }
-        else if(ev.type==='test_start') { $('progress-test').textContent=(ALL_TESTS.find(t=>t.key===ev.test)||{label:ev.test}).label+'…'; setStep(ev.model,ev.test,'running','⏳'); }
+        else if(ev.type==='test_start') { $('progress-test').textContent=ALL_TESTS.find(t=>t.key===ev.test)?.label+'…'; setStep(ev.model,ev.test,'running','⏳'); }
         else if(ev.type==='test_done')  { setStep(ev.model,ev.test,'done','✓'); if(!state.results[ev.model]) state.results[ev.model]={}; state.results[ev.model][ev.test]=ev.data; }
         else if(ev.type==='test_error') { setStep(ev.model,ev.test,'error','✗'); if(!state.results[ev.model]) state.results[ev.model]={}; state.results[ev.model][ev.test]={error:ev.error}; }
         else if(ev.type==='model_done') { state.results[ev.model]=ev.result; }
@@ -338,12 +338,12 @@ function barChart(canvas, labels, datasets, extraOpts={}) {
 function renderOverview(models) {
   // Leaderboard
   const lb = $('leaderboard'); lb.innerHTML='';
-  const sorted = [...models].sort((a,b)=>(state.((results[b] && results[b].overall_score)||0))-(state.((results[a] && results[a].overall_score)||0)));
-  const maxSc = state.((results[sorted[0]] && results[sorted[0]].overall_score)||100);
+  const sorted = [...models].sort((a,b)=>((state.results[b] && state.results[b].overall_score || 0)) - ((state.results[a] && state.results[a].overall_score || 0)));
+  const maxSc = state.results[sorted[0]]?.overall_score||100;
   sorted.forEach((m,i) => {
     const r=state.results[m]; const sc=(r && r.overall_score);
     const rank=['🥇','🥈','🥉'][i]||(i+1+'.');
-    const pills=ALL_TESTS.filter(t=>(r && r[t.key]&&!r[t.key].error)).map(t=>`<span class="lb-pill">${t.icon}</span>`).join('');
+    const pills=ALL_TESTS.filter(t=>r?.[t.key]&&!r[t.key].error).map(t=>`<span class="lb-pill">${t.icon}</span>`).join('');
     const row=document.createElement('div'); row.className='lb-row';
     row.innerHTML=`<div class="lb-rank lb-rank-${i+1}">${rank}</div><div class="lb-name">${m}</div><div class="lb-bar-wrap"><div class="lb-bar" style="width:${sc?sc/maxSc*100:0}%;background:${PALETTE[i%PALETTE.length]}"></div></div><div class="lb-pills">${pills}</div><div class="lb-score">${sc||'—'}<small style="font-size:.58rem;color:var(--muted)">/100</small></div>`;
     lb.appendChild(row);
@@ -355,14 +355,14 @@ function renderOverview(models) {
   const rDat=models.map((m,i)=>{
     const r=state.results[m]||{};
     return {label:m,data:[
-      r.(sts && sts.pearson_r)!=null?Math.max(0,r.sts.pearson_r):null,
+      (r.sts && r.sts.pearson_r)!=null?Math.max(0,r.sts.pearson_r):null,
       r.retrieval!=null?(((r.retrieval.ndcg_at_5||0)*0.6)+((r.retrieval.top1_accuracy||r.retrieval.ndcg_at_5||0)*0.2)+((r.retrieval.hard_negative_rejection||r.retrieval.ndcg_at_5||0)*0.2)):null,
-      r.(classification && classification.nearest_centroid_accuracy),
-      r.(robustness && robustness.discrimination_ratio)!=null?Math.min(1,Math.max(0,r.robustness.discrimination_ratio-1)):null,
-      r.(multilingual && multilingual.alignment_score)!=null?Math.min(1,Math.max(0,r.multilingual.alignment_score+0.1)):null,
-      r.(speed && speed.latency_mean_ms)!=null?Math.min(1,1/(1+r.speed.latency_mean_ms/80)):null,
-      r.(negation && negation.negation_awareness),
-      r.(topic_drift && topic_drift.monotonicity_score),
+      (r.classification && r.classification.nearest_centroid_accuracy)!=null?r.classification.nearest_centroid_accuracy:null,
+      (r.robustness && r.robustness.discrimination_ratio)!=null?Math.min(1,Math.max(0,r.robustness.discrimination_ratio-1)):null,
+      (r.multilingual && r.multilingual.alignment_score)!=null?Math.min(1,Math.max(0,r.multilingual.alignment_score+0.1)):null,
+      (r.speed && r.speed.latency_mean_ms)!=null?Math.min(1,1/(1+r.speed.latency_mean_ms/80)):null,
+      (r.negation && r.negation.negation_awareness)!=null?r.negation.negation_awareness:null,
+      (r.topic_drift && r.topic_drift.monotonicity_score)!=null?r.topic_drift.monotonicity_score:null,
     ],borderColor:PALETTE[i%PALETTE.length],backgroundColor:PALETTE[i%PALETTE.length]+'22',pointBackgroundColor:PALETTE[i%PALETTE.length],borderWidth:2};
   });
   const radarC=new Chart(rc,{type:'radar',data:{labels:radarLabels,datasets:rDat},options:{responsive:true,maintainAspectRatio:false,scales:{r:{min:0,max:1,ticks:{display:false},grid:{color:'#30363d'},pointLabels:{color:'#8b949e',font:{size:10}}}},plugins:{legend:{labels:{color:'#8b949e',font:{size:10}}},tooltip:{backgroundColor:'#1c2128',titleColor:'#e6edf3',bodyColor:'#8b949e'}}}});
@@ -371,7 +371,7 @@ function renderOverview(models) {
   // Overall bar
   const oc=$('overall-chart'); if(oc._chart) oc._chart.destroy();
   const ovC=barChart(oc,sorted,
-    [{label:'Score /100',data:sorted.map(m=>state.((results[m] && results[m].overall_score)||0)),backgroundColor:sorted.map((_,i)=>cc(i)),borderColor:sorted.map((_,i)=>PALETTE[i%PALETTE.length]),borderWidth:2,borderRadius:6}],
+    [{label:'Score /100',data:sorted.map(m=>(state.results[m] && state.results[m].overall_score || 0)),backgroundColor:sorted.map((_,i)=>cc(i)),borderColor:sorted.map((_,i)=>PALETTE[i%PALETTE.length]),borderWidth:2,borderRadius:6}],
     {plugins:{...CD().plugins,legend:{display:false}},scales:{...CD().scales,y:{...CD().scales.y,beginAtZero:true,max:100}}});
   oc._chart=ovC;
 }
@@ -379,7 +379,7 @@ function renderOverview(models) {
 /* ── Speed ───────────────────────────────────────────────── */
 function renderSpeedTab(models) {
   const c=$('speed-charts'); c.innerHTML='';
-  const good=models.filter(m=>state.(results[m] && results[m].spee)(d && d.latency_mean_ms)!=null);
+  const good=models.filter(m=>(state.results[m] && state.results[m].speed && state.results[m].speed.latency_mean_ms)!=null);
   if(!good.length){c.innerHTML='<p class="muted-sm">Pas de données.</p>';return;}
 
   barChart(makeCard('speed-charts','⏱ Latence moyenne','ms — moins = mieux'), good,
@@ -403,7 +403,7 @@ function renderSpeedTab(models) {
   // Latency scatter (all individual measurements)
   if(good[0] && state.results[good[0]].speed.all_latencies) {
     const sc=makeCard('speed-charts','🔵 Toutes les latences — '+s(good[0]),'Chaque point = une requête');
-    const scC=new Chart(sc,{type:'scatter',data:{datasets:good.map((m,i)=>({label:m,data:state.results[m].speed.(all_latencies && all_latencies.map)((v,j)=>({x:j+1,y:v}))||[],backgroundColor:cc(i),pointRadius:4}))},options:{...CD(),scales:{x:{...CD().scales.x,title:{display:true,text:'#',color:'#6e7681'}},y:{...CD().scales.y,title:{display:true,text:'ms',color:'#6e7681'},beginAtZero:true}}}});
+    const scC=new Chart(sc,{type:'scatter',data:{datasets:good.map((m,i)=>({label:m,data:(state.results[m].speed.all_latencies && state.results[m].speed.all_latencies.map((v,j)=>({x:j+1,y:v})))||[],backgroundColor:cc(i),pointRadius:4}))},options:{...CD(),scales:{x:{...CD().scales.x,title:{display:true,text:'#',color:'#6e7681'}},y:{...CD().scales.y,title:{display:true,text:'ms',color:'#6e7681'},beginAtZero:true}}}});
     state.charts.push(scC);
   }
 
@@ -418,7 +418,7 @@ function renderSpeedTab(models) {
 /* ── STS ─────────────────────────────────────────────────── */
 function renderSTSTab(models) {
   const c=$('sts-charts'); c.innerHTML='';
-  const good=models.filter(m=>state.(results[m] && results[m].st)(s && s.pearson_r)!=null);
+  const good=models.filter(m=>(state.results[m] && state.results[m].sts && state.results[m].sts.pearson_r)!=null);
   if(!good.length){c.innerHTML='<p class="muted-sm">Pas de données.</p>';return;}
 
   barChart(makeCard('sts-charts','📈 Corrélation de Pearson','Vs annotations humaines · plus proche de 1 = mieux'), good,
@@ -468,7 +468,7 @@ const QUERY_TYPE_META = {
 
 function renderRetrievalTab(models) {
   const c=$('retrieval-charts'); c.innerHTML='';
-  const good=models.filter(m=>state.(results[m] && results[m].retrieva)(l && l.ndcg_at_5)!=null);
+  const good=models.filter(m=>(state.results[m] && state.results[m].retrieval && state.results[m].retrieval.ndcg_at_5)!=null);
   if(!good.length){c.innerHTML='<p class="muted-sm">Pas de données.</p>';return;}
 
   // ── 1. Core metrics bar chart ───────────────────────────────────
@@ -555,7 +555,7 @@ function renderRetrievalTab(models) {
 /* ── Classification ──────────────────────────────────────── */
 function renderClassificationTab(models) {
   const c=$('cls-charts'); c.innerHTML='';
-  const good=models.filter(m=>state.(results[m] && results[m].classificatio)(n && n.nearest_centroid_accuracy)!=null);
+  const good=models.filter(m=>(state.results[m] && state.results[m].classification && state.results[m].classification.nearest_centroid_accuracy)!=null);
   if(!good.length){c.innerHTML='<p class="muted-sm">Pas de données.</p>';return;}
 
   const mc=makeCard('cls-charts','📦 Métriques de classification','Précision centroïde & Silhouette');
@@ -585,7 +585,7 @@ function renderClassificationTab(models) {
 /* ── Robustness ──────────────────────────────────────────── */
 function renderRobustnessTab(models) {
   const c=$('rob-charts'); c.innerHTML='';
-  const good=models.filter(m=>state.(results[m] && results[m].robustnes)(s && s.discrimination_ratio)!=null);
+  const good=models.filter(m=>(state.results[m] && state.results[m].robustness && state.results[m].robustness.discrimination_ratio)!=null);
   if(!good.length){c.innerHTML='<p class="muted-sm">Pas de données.</p>';return;}
 
   const rc=makeCard('rob-charts','🛡 Intra vs inter-groupe','Paraphrases (intra) doivent être plus proches');
@@ -609,7 +609,7 @@ function renderRobustnessTab(models) {
 /* ── Multilingual ────────────────────────────────────────── */
 function renderMultilingualTab(models) {
   const c=$('multi-charts'); c.innerHTML='';
-  const good=models.filter(m=>state.(results[m] && results[m].multilingua)(l && l.alignment_score)!=null);
+  const good=models.filter(m=>(state.results[m] && state.results[m].multilingual && state.results[m].multilingual.alignment_score)!=null);
   if(!good.length){c.innerHTML='<p class="muted-sm">Pas de données.</p>';return;}
 
   const mc=makeCard('multi-charts','🌍 Sim. traduction vs non-traduction','Bleu = paires traduites · Rouge = paires aléatoires');
@@ -633,7 +633,7 @@ function renderMultilingualTab(models) {
 /* ── Negation ────────────────────────────────────────────── */
 function renderNegationTab(models) {
   const c=$('neg-charts'); c.innerHTML='';
-  const good=models.filter(m=>state.(results[m] && results[m].negatio)(n && n.avg_negation_similarity)!=null);
+  const good=models.filter(m=>(state.results[m] && state.results[m].negation && state.results[m].negation.avg_negation_similarity)!=null);
   if(!good.length){c.innerHTML='<p class="muted-sm">Pas de données.</p>';return;}
 
   barChart(makeCard('neg-charts','🔄 Similarité cosinus des paires opposées','Bas = le modèle distingue bien les opposés (moins = mieux ici)'), good,
@@ -664,7 +664,7 @@ function renderNegationTab(models) {
 /* ── Topic Drift ─────────────────────────────────────────── */
 function renderDriftTab(models) {
   const c=$('drift-charts'); c.innerHTML='';
-  const good=models.filter(m=>state.(results[m] && results[m].topic_drif)(t && t.monotonicity_score)!=null);
+  const good=models.filter(m=>(state.results[m] && state.results[m].topic_drift && state.results[m].topic_drift.monotonicity_score)!=null);
   if(!good.length){c.innerHTML='<p class="muted-sm">Pas de données.</p>';return;}
 
   // Line charts for each drift set (first model)
@@ -746,15 +746,15 @@ function renderH2H() {
   const ra=state.results[a]; const rb=state.results[b];
   const METRICS=[
     {label:'Score global',  fn:r=>r.overall_score||0, fmt:v=>v.toFixed(1), max:100},
-    {label:'STS Pearson r', fn:r=>r.((sts && sts.pearson_r)||0), fmt:v=>v.toFixed(3), max:1},
-    {label:'NDCG@5',        fn:r=>r.((retrieval && retrieval.ndcg_at_5)||0), fmt:v=>v.toFixed(3), max:1},
-    {label:'MRR',           fn:r=>r.((retrieval && retrieval.mrr)||0), fmt:v=>v.toFixed(3), max:1},
-    {label:'Précision cls', fn:r=>(r.((classification && classification.nearest_centroid_accuracy)||0))*100, fmt:v=>v.toFixed(1)+'%', max:100},
-    {label:'Robustesse',    fn:r=>r.((robustness && robustness.discrimination_ratio)||0), fmt:v=>v.toFixed(3), max:3},
-    {label:'Alignement ML', fn:r=>r.((multilingual && multilingual.alignment_score)||0), fmt:v=>v.toFixed(3), max:1},
-    {label:'Négation',      fn:r=>r.((negation && negation.negation_awareness)||0), fmt:v=>v.toFixed(3), max:1},
-    {label:'Drift mono.',   fn:r=>r.((topic_drift && topic_drift.monotonicity_score)||0), fmt:v=>v.toFixed(3), max:1},
-    {label:'Latence (ms)',  fn:r=>r.((speed && speed.latency_mean_ms)||0), fmt:v=>v.toFixed(1)+'ms', max:null, invert:true},
+    {label:'STS Pearson r', fn:r=>(r.sts && r.sts.pearson_r)||0, fmt:v=>v.toFixed(3), max:1},
+    {label:'NDCG@5',        fn:r=>(r.retrieval && r.retrieval.ndcg_at_5)||0, fmt:v=>v.toFixed(3), max:1},
+    {label:'MRR',           fn:r=>(r.retrieval && r.retrieval.mrr)||0, fmt:v=>v.toFixed(3), max:1},
+    {label:'Précision cls', fn:r=>( (r.classification && r.classification.nearest_centroid_accuracy)||0)*100, fmt:v=>v.toFixed(1)+'%', max:100},
+    {label:'Robustesse',    fn:r=>(r.robustness && r.robustness.discrimination_ratio)||0, fmt:v=>v.toFixed(3), max:3},
+    {label:'Alignement ML', fn:r=>(r.multilingual && r.multilingual.alignment_score)||0, fmt:v=>v.toFixed(3), max:1},
+    {label:'Négation',      fn:r=>(r.negation && r.negation.negation_awareness)||0, fmt:v=>v.toFixed(3), max:1},
+    {label:'Drift mono.',   fn:r=>(r.topic_drift && r.topic_drift.monotonicity_score)||0, fmt:v=>v.toFixed(3), max:1},
+    {label:'Latence (ms)',  fn:r=>(r.speed && r.speed.latency_mean_ms)||0, fmt:v=>v.toFixed(1)+'ms', max:null, invert:true},
   ];
   let aWins=0, bWins=0;
   const rows=METRICS.map(m=>{
@@ -762,7 +762,7 @@ function renderH2H() {
     const aW = m.invert ? va<vb : va>vb;
     const bW = m.invert ? vb<va : vb>va;
     if(aW) aWins++; else if(bW) bWins++;
-    const maxV = m.max || Math.max(va,vb)*1.2 || 1;
+    const maxV = (m.max !== undefined ? m.max : (Math.max(va,vb)*1.2)) || 1;
     const pctA=Math.min(100,(va/maxV)*100); const pctB=Math.min(100,(vb/maxV)*100);
     return `<div class="h2h-metric-row">
       <div class="h2h-bar-left ${aW?'h2h-winner':'h2h-loser'}" style="display:flex;align-items:center;justify-content:flex-end;padding-right:5px;background:${aW?'#3fb95033':'var(--bg-h)'};height:26px;border-radius:4px">
@@ -802,7 +802,7 @@ function initVizForResults(models) {
   const sel=$('viz-model-select'); sel.innerHTML='';
   models.forEach(m=>sel.insertAdjacentHTML('beforeend',`<option value="${m}">${m}</option>`));
   // Auto-render PCA from already computed classification data
-  const fm=(models[0]; const cls=state.results[fm] && models[0]; const cls=state.results[fm].classification);
+  const fm=models[0]; const cls=state.results[fm] && state.results[fm].classification;
   if((cls && cls.pca_points)) renderPCADirect(cls.pca_points, cls.pca_labels, `PCA — ${fm}`);
 }
 async function runVisualization() {
@@ -826,7 +826,7 @@ function renderPCADirect(points, labels, title, texts=[]) {
     const idxs=labels.map((l,j)=>l===lbl?j:-1).filter(j=>j>=0);
     return {label:lbl,data:idxs.map(j=>({x:points[j][0],y:points[j][1],text:texts[j]||''})),backgroundColor:PALETTE[i%PALETTE.length]+'bb',pointRadius:7};
   });
-  state.pcaChart=new Chart($('pca-chart'),{type:'scatter',data:{datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8b949e',font:{size:11}}},tooltip:{backgroundColor:'#1c2128',callbacks:{label:ctx=>ctx.raw.(text && text.slice)(0,60)||''}},title:{display:true,text:title,color:'#8b949e',font:{size:12}}},scales:{x:{ticks:{display:false},grid:{color:'#21262d'}},y:{ticks:{display:false},grid:{color:'#21262d'}}}}});
+  state.pcaChart=new Chart($('pca-chart'),{type:'scatter',data:{datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8b949e',font:{size:11}}},tooltip:{backgroundColor:'#1c2128',callbacks:{label:ctx=> (ctx.raw.text && ctx.raw.text.slice)(0,60)||''}},title:{display:true,text:title,color:'#8b949e',font:{size:12}}},scales:{x:{ticks:{display:false},grid:{color:'#21262d'}},y:{ticks:{display:false},grid:{color:'#21262d'}}}}});
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -985,14 +985,14 @@ $('export-csv').addEventListener('click',()=>{
     'hn_rejection','contra_rejection','distractor_rejection',
     'cls_acc','silhouette','discrimination','multilingual','negation_awareness','monotonicity']];
   Object.entries(state.results).forEach(([m,r])=>rows.push([
-    m, r.overall_score||'', r.((speed && speed.latency_mean_ms)||''), r.((speed && speed.throughput_per_sec)||''), r.((speed && speed.embedding_dim)||''),
-    r.((sts && sts.pearson_r)||''),
-    r.((retrieval && retrieval.ndcg_at_5)||''), r.((retrieval && retrieval.ndcg_at_5_hard_only)||''),
-    r.((retrieval && retrieval.recall_at_5)||''), r.((retrieval && retrieval.mrr)||''), r.((retrieval && retrieval.top1_accuracy)||''),
-    r.((retrieval && retrieval.hard_negative_rejection)||''), r.((retrieval && retrieval.contradiction_rejection)||''), r.((retrieval && retrieval.distractor_rejection)||''),
-    r.((classification && classification.nearest_centroid_accuracy)||''), r.((classification && classification.silhouette_score)||''),
-    r.((robustness && robustness.discrimination_ratio)||''), r.((multilingual && multilingual.alignment_score)||''),
-    r.((negation && negation.negation_awareness)||''), r.((topic_drift && topic_drift.monotonicity_score)||''),
+    m, r.overall_score||'', (r.speed && r.speed.latency_mean_ms)||'', (r.speed && r.speed.throughput_per_sec)||'', (r.speed && r.speed.embedding_dim)||'',
+    (r.sts && r.sts.pearson_r)||'',
+    (r.retrieval && r.retrieval.ndcg_at_5)||'', (r.retrieval && r.retrieval.ndcg_at_5_hard_only)||'',
+    (r.retrieval && r.retrieval.recall_at_5)||'', (r.retrieval && r.retrieval.mrr)||'', (r.retrieval && r.retrieval.top1_accuracy)||'',
+    (r.retrieval && r.retrieval.hard_negative_rejection)||'', (r.retrieval && r.retrieval.contradiction_rejection)||'', (r.retrieval && r.retrieval.distractor_rejection)||'',
+    (r.classification && r.classification.nearest_centroid_accuracy)||'', (r.classification && r.classification.silhouette_score)||'',
+    (r.robustness && r.robustness.discrimination_ratio)||'', (r.multilingual && r.multilingual.alignment_score)||'',
+    (r.negation && r.negation.negation_awareness)||'', (r.topic_drift && r.topic_drift.monotonicity_score)||'',
   ]));
   dl(new Blob([rows.map(r=>r.join(',')).join('\n')],{type:'text/csv'}),'benchmark.csv');
 });
